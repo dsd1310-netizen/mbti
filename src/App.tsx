@@ -663,7 +663,14 @@ export default function App() {
               {/* API 키 입력 */}
               <div className="api-key-section">
                 <div className="api-key-header">
-                  <span className="api-key-label">🔑 Google Gemini API 키</span>
+                  <span className="api-key-label">
+                    🔑 Google Gemini API 키 
+                    {((import.meta as any).env.VITE_GEMINI_API_KEY) && (
+                      <span style={{ color: '#34d399', fontSize: '11px', marginLeft: '8px', fontWeight: 'bold' }}>
+                        (✓ 내장 API 키 자동 적용됨)
+                      </span>
+                    )}
+                  </span>
                   <button
                     type="button"
                     className="btn-secondary"
@@ -678,14 +685,20 @@ export default function App() {
                   type={showApiKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={e => handleApiKeySave(e.target.value)}
-                  placeholder="AIza... (없으면 기본 해석만 제공됩니다)"
+                  placeholder={((import.meta as any).env.VITE_GEMINI_API_KEY) ? "내장된 API 키가 사용됩니다 (직접 입력 시 덮어쓰기)" : "AIza... (없으면 기본 해석만 제공됩니다)"}
                 />
                 <p className="api-key-hint">
-                  키가 없으면 사주 계산은 되지만 AI 해석이 생략됩니다.&nbsp;
-                  <a className="api-key-link" href="https://aistudio.google.com" target="_blank" rel="noreferrer">
-                    Google AI Studio
-                  </a>
-                  에서 무료로 발급받을 수 있어요!
+                  {((import.meta as any).env.VITE_GEMINI_API_KEY) ? (
+                    <span style={{ color: '#34d399' }}>현재 내장 API 키로 해석이 자동 실행됩니다. 다른 키를 쓰려면 입력해 주세요.</span>
+                  ) : (
+                    <>
+                      키가 없으면 사주 계산은 되지만 AI 해석이 생략됩니다.&nbsp;
+                      <a className="api-key-link" href="https://aistudio.google.com" target="_blank" rel="noreferrer">
+                        Google AI Studio
+                      </a>
+                      에서 무료로 발급받을 수 있어요!
+                    </>
+                  )}
                 </p>
               </div>
 
