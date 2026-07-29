@@ -129,28 +129,28 @@ export default function App() {
       return;
     }
 
-    Kakao.Share.sendDefault({
-      objectType: 'feed',
-      content: {
-        title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
-        description: `팩폭: ${result.aiData.personality.factBomb}`,
-        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
+   Kakao.Share.sendDefault({
+    objectType: 'feed',
+    content: {
+      title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
+      description: `팩폭: ${result.aiData.personality.factBomb}`,
+      imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
+      link: {
+        mobileWebUrl: window.location.origin,
+        webUrl: window.location.origin,
+      },
+    },
+    buttons: [
+      {
+        title: '나도 분석해보기',
         link: {
-          mobileWebUrl: window.location.href,
-          webUrl: window.location.href,
+          mobileWebUrl: window.location.origin,
+          webUrl: window.location.origin,
         },
       },
-      buttons: [
-        {
-          title: '나도 분석해보기',
-          link: {
-            mobileWebUrl: window.location.href,
-            webUrl: window.location.href,
-          },
-        },
-      ],
-    });
-  };
+    ],
+  });
+};
 
   // 보고서형 PDF 파일 다운로드 기능 (인쇄 친화적 팝업 출력 창)
   const handleDownloadPDF = () => {
