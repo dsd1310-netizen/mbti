@@ -21,6 +21,7 @@ export interface CategoryInterpretation {
 export interface AiInterpretation {
   title: string;
   jungianNote: string;
+  sajuExplanation: string; // 사주원국(연/월/일/시주) 8글자 전체를 대중 눈높이에 맞춘 쉽고 흥미로운 해설
   personality: CategoryInterpretation;
   career: CategoryInterpretation;
   romance: CategoryInterpretation;
@@ -28,7 +29,7 @@ export interface AiInterpretation {
   prescriptions: string[]; // 🎯 3가지 현실 맞춤 처방전 (행동 지침)
 }
 
-// ─── JSON 추출 및 부분/자린 JSON 복구 정규식 파서 ────────────────────────────
+// ─── JSON 추출 및 부분/잘린 JSON 복구 정규식 파서 ────────────────────────────
 
 /**
  * AI 응답 텍스트가 도중에 잘리거나 마크다운에 감싸져 있어도
@@ -82,6 +83,9 @@ function buildSafeResult(parsed: Partial<AiInterpretation>, mbti: string): AiInt
     jungianNote: parsed.jungianNote && parsed.jungianNote.trim() 
       ? parsed.jungianNote.trim() 
       : '타고난 사주 오행의 기운과 MBTI의 성향이 심층적인 시너지와 반전 매력을 만들어냅니다.',
+    sajuExplanation: parsed.sajuExplanation && parsed.sajuExplanation.trim()
+      ? parsed.sajuExplanation.trim()
+      : '당신의 사주원국은 연주(초년운/조상), 월주(사회성/부모), 일주(본인/배우자), 시주(말년/자식)가 조화롭게 어우러진 우주의 지도입니다. 타고난 사주팔자의 글자들은 각각 자연의 오행(나무, 불, 흙, 쇠, 물)을 상징하며, 당신이 세상을 살아가는 데 든든한 밑거름이자 지도 역할을 해줍니다.',
     personality: fallbackCat(
       parsed.personality,
       '사주의 일간 기운과 MBTI 성향이 합쳐져 강력한 열정을 만듭니다. 상황에 따라 거친 폭풍이 되기도 하고 따뜻한 햇살이 되기도 하는 다채로운 에너지를 가지고 계시네요. 행동력이 뛰어나고 주변을 밝히는 활력이 넘치지만, 때로는 끓어오르는 열정 때문에 정작 자기 자신의 내면을 돌보는 시간이 부족해질 수 있습니다.',
@@ -162,11 +166,13 @@ export async function generateSajuInterpretation(
 1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
 2. 톤앤매너: 예의를 갖추되 정곡을 찌르는 존댓말 팩폭("~해요", "~입니다") 사용.
 3. 분석 분량: personality, career, romance, wealth 각각 5~7줄 이상의 풍부한 심층 분석을 작성하세요.
-4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록(\`\`\`json 등)은 절대 쓰지 마세요.
+4. 사주원국 해설(sajuExplanation): 전문 명리학 용어를 몰라도 재미있게 읽을 수 있도록, 태어난 연/월/일/시주의 기운과 8글자 명식의 오행 형태를 자연경관이나 일상 사물(예: "눈 덮인 거대한 산속의 한 자루의 촛불", "끝없는 강물을 묵묵히 지켜주는 든든한 흙더미")에 비유하여 초보자 눈높이에서 5~6줄로 친절하게 설명해 주세요.
+5. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록(\`\`\`json 등)은 절대 쓰지 마세요.
 
 {
   "title": "${name} 님의 사주 × MBTI 심층 융합 보고서",
   "jungianNote": "MBTI ${mbti}와 사주 일간(${dayStem})의 비유적 융합 분석 (2~3문장)",
+  "sajuExplanation": "사주원국 8글자와 각 기둥의 기운을 초보자 눈높이에서 쉽고 흥미진진하게 설명한 종합 해설 (자연 비유 포함, 5~6줄)",
   "personality": {
     "analysis": "성격 및 본질 심층 분석 (쉬운 비유 사용, 5~7줄)",
     "factBomb": "🔥 뼈 때리는 성격 팩폭 한줄평 (존댓말 매운맛)",
@@ -255,4 +261,3 @@ export async function generateSajuInterpretation(
 
   throw lastError || new Error('현재 Gemini API 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
 }
-

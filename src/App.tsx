@@ -71,9 +71,11 @@ export default function App() {
 
   // 저장된 API 키 & 북마크 로드
   useEffect(() => {
+    const envKey = ((import.meta as any).env.VITE_GEMINI_API_KEY as string) || '';
     const savedKey = localStorage.getItem('saju_gemini_key') ?? '';
+    setApiKey(savedKey || envKey);
+    
     const savedBm = localStorage.getItem('saju_bookmarks');
-    setApiKey(savedKey);
     if (savedBm) { try { setBookmarks(JSON.parse(savedBm)); } catch {} }
   }, []);
 
@@ -81,6 +83,293 @@ export default function App() {
   const handleApiKeySave = (key: string) => {
     setApiKey(key);
     localStorage.setItem('saju_gemini_key', key);
+  };
+
+  // 카카오톡 결과 공유 기능
+  const handleKakaoShare = () => {
+    const kakaoKey = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '';
+    if (!kakaoKey) {
+      showToast('카카오톡 공유 JavaScript Key가 설정되지 않았습니다. (.env 파일을 확인해주세요)');
+      return;
+    }
+
+    const { Kakao } = window as any;
+    if (!Kakao) {
+      showToast('카카오톡 SDK가 로드되지 않았습니다.');
+      return;
+    }
+
+    if (!Kakao.isInitialized()) {
+      try {
+        Kakao.init(kakaoKey);
+      } catch (err) {
+        console.error('Kakao init error:', err);
+      }
+    }
+
+    if (!result || !result.aiData) {
+      showToast('공유할 분석 결과가 없습니다.');
+      return;
+    }
+
+    Kakao.Share.sendDefault({
+      objectType: 'feed',
+      content: {
+        title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
+        description: `팩폭: ${result.aiData.personality.factBomb}`,
+        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
+        link: {
+          mobileWebUrl: window.location.href,
+          webUrl: window.location.href,
+        },
+      },
+      buttons: [
+        {
+          title: '나도 분석해보기',
+          link: {
+            mobileWebUrl: window.location.href,
+            webUrl: window.location.href,
+          },
+        },
+      ],
+    });
+  };
+
+  // 보고서형 PDF 파일 다운로드 기능 (인쇄 친화적 팝업 출력 창)
+  const handleDownloadPDF = () => {
+    if (!result) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast('팝업 차단이 설정되어 있습니다. 팝업을 허용해 주세요.');
+      return;
+    }
+
+    const saju = result.sajuResult;
+    const ai = result.aiData;
+
+    let aiContentHtml = '';
+    if (ai) {
+      aiContentHtml = `
+        <div class="report-section">
+          <h2>🤖 AI 융합 분석: ${ai.title}</h2>
+          <p class="lead-note"><em>${ai.jungianNote}</em></p>
+          
+          <div class="report-block">
+            <h3>🧭 쉬운 사주원국 해설</h3>
+            <p>${ai.sajuExplanation}</p>
+          </div>
+
+          <div class="report-block">
+            <h3>🌟 성격 진단</h3>
+            <p>${ai.personality.analysis}</p>
+            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.personality.factBomb}</p>
+            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.personality.luckyItem}</p>
+          </div>
+
+          <div class="report-block">
+            <h3>💼 커리어 & 재물</h3>
+            <p>${ai.career.analysis}</p>
+            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.career.factBomb}</p>
+            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.career.luckyItem}</p>
+          </div>
+
+          <div class="report-block">
+            <h3>💖 연애 & 인간관계</h3>
+            <p>${ai.romance.analysis}</p>
+            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.romance.factBomb}</p>
+            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.romance.luckyItem}</p>
+          </div>
+
+          <div class="report-block">
+            <h3>💰 재물 & 지출</h3>
+            <p>${ai.wealth.analysis}</p>
+            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.wealth.factBomb}</p>
+            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.wealth.luckyItem}</p>
+          </div>
+
+          <div class="report-block">
+            <h3>🎯 3대 실천 처방전</h3>
+            <ul>
+              ${ai.prescriptions.map(p => `<li>${p}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${result.formData.name}님의 사주 MBTI 분석 보고서</title>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+          }
+          h1 {
+            text-align: center;
+            font-size: 24px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+          }
+          .meta-table, .saju-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+          }
+          .meta-table th, .meta-table td, .saju-table th, .saju-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+          }
+          .meta-table th, .saju-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+          }
+          .saju-pillar {
+            font-weight: bold;
+            font-size: 18px;
+            color: #000;
+          }
+          .report-section {
+            margin-top: 30px;
+          }
+          .report-block {
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px dashed #ddd;
+          }
+          .report-block h3 {
+            font-size: 16px;
+            color: #111;
+            margin-bottom: 10px;
+            border-left: 4px solid #4f46e5;
+            padding-left: 10px;
+          }
+          .fact-bomb {
+            background-color: #fffbeb;
+            border: 1px solid #fef3c7;
+            padding: 10px;
+            border-radius: 6px;
+            color: #b45309;
+            font-size: 13px;
+          }
+          .lucky-item {
+            color: #059669;
+            font-size: 13px;
+            margin-top: 5px;
+          }
+          .lead-note {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+            background: #f9fafb;
+            padding: 10px;
+            border-radius: 6px;
+          }
+          ul {
+            padding-left: 20px;
+          }
+          li {
+            margin-bottom: 8px;
+          }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>🔮 星命 사주 × MBTI 종합 보고서</h1>
+        
+        <table class="meta-table">
+          <tr>
+            <th>이름</th>
+            <td>${result.formData.name}</td>
+            <th>성별</th>
+            <td>${result.formData.gender === 'male' ? '남성' : '여성'}</td>
+            <th>MBTI</th>
+            <td>${result.formData.mbti}</td>
+          </tr>
+          <tr>
+            <th>생년월일</th>
+            <td colspan="2">${result.formData.birthYear}년 ${result.formData.birthMonth}월 ${result.formData.birthDay}일</td>
+            <th>태어난 시간</th>
+            <td colspan="2">${result.hourBranch.name} (${result.hourBranch.time})</td>
+          </tr>
+        </table>
+
+        <h2>🧭 사주원국 명식</h2>
+        <table class="saju-table">
+          <tr>
+            <th>구분</th>
+            <th>시주 (時柱)</th>
+            <th>일주 (日柱)</th>
+            <th>월주 (月柱)</th>
+            <th>연주 (年柱)</th>
+          </tr>
+          <tr class="saju-pillar">
+            <td>천간 (天干)</td>
+            <td>${saju.hourPillar.hanjaText[0]}</td>
+            <td>${saju.dayPillar.hanjaText[0]}</td>
+            <td>${saju.monthPillar.hanjaText[0]}</td>
+            <td>${saju.yearPillar.hanjaText[0]}</td>
+          </tr>
+          <tr class="saju-pillar">
+            <td>지지 (地支)</td>
+            <td>${saju.hourPillar.hanjaText[1]}</td>
+            <td>${saju.dayPillar.hanjaText[1]}</td>
+            <td>${saju.monthPillar.hanjaText[1]}</td>
+            <td>${saju.yearPillar.hanjaText[1]}</td>
+          </tr>
+          <tr>
+            <td>한글</td>
+            <td>${saju.hourPillar.text}</td>
+            <td>${saju.dayPillar.text}</td>
+            <td>${saju.monthPillar.text}</td>
+            <td>${saju.yearPillar.text}</td>
+          </tr>
+        </table>
+
+        <h2>🌿 오행 분포</h2>
+        <table class="meta-table">
+          <tr>
+            <th>목(木)</th>
+            <th>화(火)</th>
+            <th>토(土)</th>
+            <th>금(金)</th>
+            <th>수(水)</th>
+          </tr>
+          <tr>
+            <td>${saju.elementCounts.wood}개</td>
+            <td>${saju.elementCounts.fire}개</td>
+            <td>${saju.elementCounts.earth}개</td>
+            <td>${saju.elementCounts.metal}개</td>
+            <td>${saju.elementCounts.water}개</td>
+          </tr>
+        </table>
+
+        ${aiContentHtml}
+
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   // 북마크
@@ -139,11 +428,12 @@ export default function App() {
       let aiData: AiInterpretation | null = null;
       let errMsg: string | null = null;
 
-      // Gemini AI 해석
-      if (apiKey.trim()) {
+      // Gemini AI 해석 (환경변수 키 또는 입력된 키 사용)
+      const effectiveApiKey = apiKey.trim() || ((import.meta as any).env.VITE_GEMINI_API_KEY as string) || '';
+      if (effectiveApiKey.trim()) {
         try {
           aiData = await generateSajuInterpretation(
-            apiKey.trim(),
+            effectiveApiKey.trim(),
             formData.name,
             formData.gender,
             formData.mbti,
@@ -453,14 +743,30 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <div className="profile-actions">
+              <div className="profile-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {result.aiData && (
-                  <button
-                    className="btn-gold"
-                    onClick={() => addBookmark('종합 프로필', `${result.formData.name} · ${result.formData.mbti}`, `${result.aiData!.personality.analysis}\n\n${result.aiData!.personality.factBomb}`)}
-                  >
-                    🔖 결과 저장
-                  </button>
+                  <>
+                    <button
+                      className="btn-gold"
+                      onClick={() => addBookmark('종합 프로필', `${result.formData.name} · ${result.formData.mbti}`, `${result.aiData!.personality.analysis}\n\n${result.aiData!.personality.factBomb}`)}
+                    >
+                      🔖 결과 저장
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '10px 14px', fontSize: '13px' }}
+                      onClick={handleDownloadPDF}
+                    >
+                      📄 PDF 저장
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '10px 14px', fontSize: '13px', background: '#fee500', color: '#000', border: 'none' }}
+                      onClick={handleKakaoShare}
+                    >
+                      💬 카톡 공유
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -564,7 +870,7 @@ export default function App() {
               <div className="section-title" style={{ marginBottom: 16 }}>사주 × {result.formData.mbti} 융합 분석</div>
 
               {/* AI 키 없음 */}
-              {!apiKey.trim() && !result.aiData && (
+              {!apiKey.trim() && !((import.meta as any).env.VITE_GEMINI_API_KEY as string) && !result.aiData && (
                 <div className="no-api-notice">
                   <div className="no-api-notice-icon">🔑</div>
                   <div className="no-api-notice-title">Gemini API 키를 입력하면 AI 해석을 받을 수 있어요!</div>
@@ -612,6 +918,16 @@ export default function App() {
                     </div>
                     <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                       {result.aiData.jungianNote}
+                    </p>
+                  </div>
+
+                  {/* 사주원국 대중 친화적 해설 카드 */}
+                  <div className="glass-card" style={{ padding: '20px', background: 'rgba(79, 70, 229, 0.05)', border: '1px solid rgba(79, 70, 229, 0.15)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--purple-light)', fontWeight: 700, marginBottom: 8 }}>
+                      🧭 AI가 들려주는 쉬운 사주원국 풀이
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>
+                      {result.aiData.sajuExplanation}
                     </p>
                   </div>
 
