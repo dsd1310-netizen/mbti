@@ -86,16 +86,33 @@ export default function App() {
   };
 
   // 카카오톡 결과 공유 기능
-  const handleKakaoShare = () => {
+  const handleKakaoShare = async () => {
     const kakaoKey = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '';
     if (!kakaoKey) {
       showToast('카카오톡 공유 JavaScript Key가 설정되지 않았습니다. (.env 파일을 확인해주세요)');
       return;
     }
 
-    const { Kakao } = window as any;
+    let { Kakao } = window as any;
     if (!Kakao) {
-      showToast('카카오톡 SDK가 로드되지 않았습니다.');
+      // SDK가 아직 로드되지 않은 경우 동적으로 스크립트 삽입 및 대기
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Kakao SDK script load error'));
+          document.head.appendChild(script);
+        });
+        Kakao = (window as any).Kakao;
+      } catch (err) {
+        console.error('Failed to load Kakao SDK dynamically:', err);
+      }
+    }
+
+    if (!Kakao) {
+      showToast('카카오톡 SDK 로드에 실패했습니다. 네트워크 환경 또는 광고 차단 프로그램을 확인해주세요.');
       return;
     }
 
