@@ -136,7 +136,7 @@ export default function App() {
       content: {
         title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
         description: `팩폭: ${result.aiData.personality.factBomb}`,
-        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
+        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0',
         link: {
           mobileWebUrl: 'https://mbti-delta-red.vercel.app',
           webUrl: 'https://mbti-delta-red.vercel.app',
