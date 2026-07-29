@@ -5,11 +5,12 @@
 
 import { SajuResult } from './sajuCalculator';
 
-// 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열
+// 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열 (2026년 최신 모델 기준)
 const MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
   'gemini-2.5-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
+  'gemini-2.5-pro',
 ];
 
 export interface CategoryInterpretation {
