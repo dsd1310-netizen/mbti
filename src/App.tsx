@@ -87,7 +87,7 @@ export default function App() {
 
   // 카카오톡 결과 공유 기능
   const handleKakaoShare = async () => {
-    const kakaoKey = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '';
+    const kakaoKey = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
     if (!kakaoKey) {
       showToast('카카오톡 공유 JavaScript Key가 설정되지 않았습니다. (.env 파일을 확인해주세요)');
       return;
