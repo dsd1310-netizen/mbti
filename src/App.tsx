@@ -111,14 +111,15 @@ export default function App() {
       }
     }
 
-    if (!Kakao) {
+   if (!Kakao) {
       showToast('카카오톡 SDK 로드에 실패했습니다. 네트워크 환경 또는 광고 차단 프로그램을 확인해주세요.');
       return;
     }
 
+    // 대표 JavaScript 키로 직접 안전하게 초기화
     if (!Kakao.isInitialized()) {
       try {
-        Kakao.init(kakaoKey);
+        Kakao.init('6a1062db91e2cfd94596414ebf75a891');
       } catch (err) {
         console.error('Kakao init error:', err);
       }
@@ -129,28 +130,29 @@ export default function App() {
       return;
     }
 
-   Kakao.Share.sendDefault({
-    objectType: 'feed',
-    content: {
-      title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
-      description: `팩폭: ${result.aiData.personality.factBomb}`,
-      imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
-      link: {
-        mobileWebUrl: window.location.origin,
-        webUrl: window.location.origin,
-      },
-    },
-    buttons: [
-      {
-        title: '나도 분석해보기',
+    // 카카오톡 공유하기 실행 (올바른 영문 규격)
+    Kakao.Share.sendDefault({
+      objectType: 'feed',
+      content: {
+        title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
+        description: `팩폭: ${result.aiData.personality.factBomb}`,
+        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=600&auto=format&fit=crop',
         link: {
-          mobileWebUrl: window.location.origin,
-          webUrl: window.location.origin,
+          mobileWebUrl: 'https://mbti-delta-red.vercel.app',
+          webUrl: 'https://mbti-delta-red.vercel.app',
         },
       },
-    ],
-  });
-};
+      buttons: [
+        {
+          title: '나도 분석해보기',
+          link: {
+            mobileWebUrl: 'https://mbti-delta-red.vercel.app',
+            webUrl: 'https://mbti-delta-red.vercel.app',
+          },
+        },
+      ],
+    });
+  };
 
   // 보고서형 PDF 파일 다운로드 기능 (인쇄 친화적 팝업 출력 창)
   const handleDownloadPDF = () => {
