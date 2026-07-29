@@ -138,16 +138,16 @@ export default function App() {
         description: `팩폭: ${result.aiData.personality.factBomb}`,
         imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0',
         link: {
-          mobileWebUrl: 'https://mbti-delta-red.vercel.app',
-          webUrl: 'https://mbti-delta-red.vercel.app',
+          mobileWebUrl: window.location.href,
+          webUrl: window.location.href,
         },
       },
       buttons: [
         {
           title: '나도 분석해보기',
           link: {
-            mobileWebUrl: 'https://mbti-delta-red.vercel.app',
-            webUrl: 'https://mbti-delta-red.vercel.app',
+            mobileWebUrl: window.location.href,
+            webUrl: window.location.href,
           },
         },
       ],
