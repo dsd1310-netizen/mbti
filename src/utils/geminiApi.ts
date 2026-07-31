@@ -19,15 +19,20 @@ export interface CategoryInterpretation {
   luckyItem: string;      // 🍀 럭키 아이템 & ⚠️ 피해야 할 상극 유형
 }
 
-export interface AiInterpretation {
+export interface SajuIntro {
   title: string;
   jungianNote: string;
   sajuExplanation: string; // 사주원국(연/월/일/시주) 8글자 전체를 대중 눈높이에 맞춘 쉽고 흥미로운 해설
-  personality: CategoryInterpretation;
-  career: CategoryInterpretation;
-  romance: CategoryInterpretation;
-  wealth: CategoryInterpretation;
-  prescriptions: string[]; // 🎯 3가지 현실 맞춤 처방전 (행동 지침)
+}
+
+export type AiCategoryKey = 'personality' | 'career' | 'romance' | 'wealth';
+
+const ELEMENT_KO: Record<string, string> = {
+  wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)'
+};
+
+function elementCountsStr(elementCounts: ElementCounts): string {
+  return Object.entries(elementCounts).map(([k, v]) => `${ELEMENT_KO[k]} ${v}개`).join(', ');
 }
 
 // ─── JSON 추출 및 부분/잘린 JSON 복구 정규식 파서 ────────────────────────────
@@ -36,7 +41,7 @@ export interface AiInterpretation {
  * AI 응답 텍스트가 도중에 잘리거나 마크다운에 감싸져 있어도
  * 안전하게 파싱하여 반환합니다.
  */
-function extractJson(raw: string): Partial<AiInterpretation> | null {
+function extractJsonObject<T>(raw: string): Partial<T> | null {
   if (!raw) return null;
 
   let text = raw
@@ -51,7 +56,7 @@ function extractJson(raw: string): Partial<AiInterpretation> | null {
 
   let textToParse = text;
   const lastBrace = textToParse.lastIndexOf('}');
-  
+
   if (lastBrace === -1 || lastBrace < firstBrace) {
     const quoteCount = (textToParse.match(/"/g) || []).length;
     if (quoteCount % 2 !== 0) {
@@ -63,62 +68,10 @@ function extractJson(raw: string): Partial<AiInterpretation> | null {
   }
 
   try {
-    return JSON.parse(textToParse) as Partial<AiInterpretation>;
+    return JSON.parse(textToParse) as Partial<T>;
   } catch {
     return null;
   }
-}
-
-/**
- * 누락되었거나 잘린 필드가 있더라도 자연스러운 심층 fallback 메시지를 채워줍니다.
- */
-function buildSafeResult(parsed: Partial<AiInterpretation>, mbti: string): AiInterpretation {
-  const fallbackCat = (cat: CategoryInterpretation | undefined, defAnalysis: string, defFact: string, defLucky: string): CategoryInterpretation => ({
-    analysis: cat?.analysis && cat.analysis.trim() ? cat.analysis.trim() : defAnalysis,
-    factBomb: cat?.factBomb && cat.factBomb.trim() ? cat.factBomb.trim() : defFact,
-    luckyItem: cat?.luckyItem && cat.luckyItem.trim() ? cat.luckyItem.trim() : defLucky,
-  });
-
-  return {
-    title: parsed.title && parsed.title.trim() ? parsed.title.trim() : `${mbti} × 사주 심층 융합 분석`,
-    jungianNote: parsed.jungianNote && parsed.jungianNote.trim() 
-      ? parsed.jungianNote.trim() 
-      : '타고난 사주 오행의 기운과 MBTI의 성향이 심층적인 시너지와 반전 매력을 만들어냅니다.',
-    sajuExplanation: parsed.sajuExplanation && parsed.sajuExplanation.trim()
-      ? parsed.sajuExplanation.trim()
-      : '당신의 사주원국은 연주(초년운/조상), 월주(사회성/부모), 일주(본인/배우자), 시주(말년/자식)가 조화롭게 어우러진 우주의 지도입니다. 타고난 사주팔자의 글자들은 각각 자연의 오행(나무, 불, 흙, 쇠, 물)을 상징하며, 당신이 세상을 살아가는 데 든든한 밑거름이자 지도 역할을 해줍니다.',
-    personality: fallbackCat(
-      parsed.personality,
-      '사주의 일간 기운과 MBTI 성향이 합쳐져 강력한 열정을 만듭니다. 상황에 따라 거친 폭풍이 되기도 하고 따뜻한 햇살이 되기도 하는 다채로운 에너지를 가지고 계시네요. 행동력이 뛰어나고 주변을 밝히는 활력이 넘치지만, 때로는 끓어오르는 열정 때문에 정작 자기 자신의 내면을 돌보는 시간이 부족해질 수 있습니다.',
-      '겉으로는 용광로처럼 정열적이지만 실상은 3초 만에 방전되어 눕고 싶어 하는 반전의 행동파시네요!',
-      '🍀 럭키 아이템: 딥 블루 스카프 | ⚠️ 상극: 대책 없이 무계획으로 밀어붙이는 사람'
-    ),
-    career: fallbackCat(
-      parsed.career,
-      '타고난 분석력과 독창적인 직관이 만나 직장이나 업무 환경에서 아이디어 창고 역할을 톡톡히 해냅니다. 사주의 오행 균형과 MBTI의 판단 기획력이 결합될 때 추진력이 배가됩니다. 단순 반복적인 사무 업무보다는 본인의 권한이 보장되고 새로운 전략을 기획하는 창의적 분야에서 압도적인 성과를 냅니다.',
-      '머릿속으로 이미 우주를 창조하셨지만, 막상 엑셀 입력이나 단순 문서 작업 앞에서는 영혼이 탈출하시는군요!',
-      '🍀 럭키 아이템: 노이즈 캔슬링 헤드폰 | ⚠️ 상극: 감정적으로 일하고 징징대는 직장 동료'
-    ),
-    romance: fallbackCat(
-      parsed.romance,
-      '연애할 때는 뜨겁고 솔직하며 상대방의 진심을 누구보다 깊게 파악하는 능력이 있습니다. 서로의 독립적인 개인 공간과 시간을 존중해 줄 때 관계가 오래 유지됩니다. 밀당이나 애매모호한 태도를 가장 싫어하며, 본인의 솔직함을 바다처럼 포용해 주는 따뜻하고 안정적인 사람을 만났을 때 비로소 안식처를 찾습니다.',
-      '상대방에게 다 맞춰줄 것처럼 굴지만 사실 자기만의 고집과 구역은 절대 타협 안 하는 은근한 독재자 성향이시네요!',
-      '🍀 럭키 아이템: 따뜻한 우디 향수 | ⚠️ 상극: 답장 늦고 돌려 말하는 밀당형 인간'
-    ),
-    wealth: fallbackCat(
-      parsed.wealth,
-      '재물을 모으는 사주적 포텐셜과 MBTI의 정보 수집 능력이 우수하여 돈을 버는 감각이 뛰어납니다. 다만 기분이 좋을 때나 스트레스를 받았을 때 순간적인 보상 심리로 나가는 지출을 주의해야 합니다. 장기적인 자산 관리 시스템을 구축하면 크게 부를 축적할 기회가 반드시 찾아옵니다.',
-      '돈을 벌 때는 사자처럼 매섭게 벌지만, 스트레스받으면 홧김 비용으로 통장을 시원하게 비워버리시네요!',
-      '🍀 럭키 아이템: 자동 적금 통장 | ⚠️ 상극: "이거 대박이다"라며 한탕주의 투자 권하는 지인'
-    ),
-    prescriptions: Array.isArray(parsed.prescriptions) && parsed.prescriptions.length >= 3
-      ? parsed.prescriptions
-      : [
-          '🎯 1. 홧김에 시작하는 계획은 24시간 동안 냉각기를 두고 다시 검토하세요.',
-          '🎯 2. 사주 오행의 불균형을 막기 위해 하루 20분씩 명상이나 온전한 휴식을 가지세요.',
-          '🎯 3. 감정적인 소모를 줄이고, 나만의 현실적인 자산 지출 기준을 명확히 설정하세요.'
-        ]
-  };
 }
 
 /**
@@ -126,82 +79,10 @@ function buildSafeResult(parsed: Partial<AiInterpretation>, mbti: string): AiInt
  */
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ─── 메인 API 호출 함수 ────────────────────────────────────────────────────
-
-export async function generateSajuInterpretation(
-  apiKey: string,
-  name: string,
-  gender: string,
-  mbti: string,
-  sajuResult: SajuResult,
-  birthYear: string,
-  birthMonth: string,
-  birthDay: string,
-  hourBranchName: string,
-  onStatusChange?: (status: string) => void
-): Promise<AiInterpretation> {
-  const { yearPillar, monthPillar, dayPillar, hourPillar, elementCounts, dayStem, dayStemElement } = sajuResult;
-
-  const genderText = gender === 'male' ? '남성' : '여성';
-  const elementKo: Record<string, string> = {
-    wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)'
-  };
-  const elemStr = Object.entries(elementCounts)
-    .map(([k, v]) => `${elementKo[k]} ${v}개`)
-    .join(', ');
-
-  const prompt = `당신은 대한민국 최고 권위의 명리학(사주팔자) 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
-아래 사주 및 MBTI 정보를 가지고 ${name}(${genderText}) 님을 위한 심층 보고서 및 위트 있는 팩폭 분석을 작성해 주세요.
-
-【 사주 원국 】
-- 생년월일시: ${birthYear}년 ${birthMonth}월 ${birthDay}일 ${hourBranchName}
-- 연주(年柱): ${yearPillar.hanjaText}(${yearPillar.text})
-- 월주(月柱): ${monthPillar.hanjaText}(${monthPillar.text})
-- 일주(日柱): ${dayPillar.hanjaText}(${dayPillar.text}) ← 본인의 본질
-- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})
-- 일간(日干): ${dayStem}(${elementKo[dayStemElement]} 에너지)
-- 오행 분포: ${elemStr}
-
-【 MBTI 】: ${mbti}
-
-【 핵심 작성 지침 】:
-1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
-2. 톤앤매너: 예의를 갖추되 정곡을 찌르는 존댓말 팩폭("~해요", "~입니다") 사용.
-3. 분석 분량: personality, career, romance, wealth 각각 5~7줄 이상의 풍부한 심층 분석을 작성하세요.
-4. 사주원국 해설(sajuExplanation): 전문 명리학 용어를 몰라도 재미있게 읽을 수 있도록, 태어난 연/월/일/시주의 기운과 8글자 명식의 오행 형태를 자연경관이나 일상 사물(예: "눈 덮인 거대한 산속의 한 자루의 촛불", "끝없는 강물을 묵묵히 지켜주는 든든한 흙더미")에 비유하여 초보자 눈높이에서 5~6줄로 친절하게 설명해 주세요.
-5. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록(\`\`\`json 등)은 절대 쓰지 마세요.
-
-{
-  "title": "${name} 님의 사주 × MBTI 심층 융합 보고서",
-  "jungianNote": "MBTI ${mbti}와 사주 일간(${dayStem})의 비유적 융합 분석 (2~3문장)",
-  "sajuExplanation": "사주원국 8글자와 각 기둥의 기운을 초보자 눈높이에서 쉽고 흥미진진하게 설명한 종합 해설 (자연 비유 포함, 5~6줄)",
-  "personality": {
-    "analysis": "성격 및 본질 심층 분석 (쉬운 비유 사용, 5~7줄)",
-    "factBomb": "🔥 뼈 때리는 성격 팩폭 한줄평 (존댓말 매운맛)",
-    "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
-  },
-  "career": {
-    "analysis": "커리어 및 업무 스타일 심층 분석 (5~7줄)",
-    "factBomb": "🔥 뼈 때리는 일적 팩폭 한줄평 (존댓말 매운맛)",
-    "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
-  },
-  "romance": {
-    "analysis": "연애 및 인간관계 심층 분석 (5~7줄)",
-    "factBomb": "🔥 뼈 때리는 연애 팩폭 한줄평 (존댓말 매운맛)",
-    "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
-  },
-  "wealth": {
-    "analysis": "재물 및 소비 습관 심층 분석 (5~7줄)",
-    "factBomb": "🔥 뼈 때리는 재물 팩폭 한줄평 (존댓말 매운맛)",
-    "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
-  },
-  "prescriptions": [
-    "🎯 1. (현실적인 1번째 실천 처방전)",
-    "🎯 2. (현실적인 2번째 실천 처방전)",
-    "🎯 3. (현실적인 3번째 실천 처방전)"
-  ]
-}`;
-
+/**
+ * JSON 응답을 기대하는 Gemini API 호출 공통 함수 (모델 폴백 + 재시도 + 타임아웃)
+ */
+async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTokens: number): Promise<Partial<T> | null> {
   let lastError: Error | null = null;
   const maxRetries = 3;
 
@@ -213,13 +94,8 @@ export async function generateSajuInterpretation(
       const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       try {
-        if (onStatusChange) {
-          onStatusChange(`Gemini AI 분석 중... (${model} 모델, ${attempt}/3차 시도)`);
-        }
-
         if (attempt > 1) {
-          const delayMs = attempt * 1500;
-          await sleep(delayMs);
+          await sleep(attempt * 1500);
         }
 
         const response = await fetch(`${url}?key=${apiKey}`, {
@@ -229,7 +105,7 @@ export async function generateSajuInterpretation(
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 0.8,
-              maxOutputTokens: 8192,
+              maxOutputTokens,
               responseMimeType: 'application/json',
             },
           }),
@@ -256,12 +132,7 @@ export async function generateSajuInterpretation(
         const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
           ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
-        const parsed = extractJson(rawText);
-        if (parsed && Object.keys(parsed).length > 0) {
-          return buildSafeResult(parsed, mbti);
-        }
-
-        return buildSafeResult({}, mbti);
+        return extractJsonObject<T>(rawText);
       } catch (err: any) {
         clearTimeout(timeoutId);
         lastError = err;
@@ -275,6 +146,183 @@ export async function generateSajuInterpretation(
   throw lastError || new Error('현재 Gemini API 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
 }
 
+// ─── 사주 인트로 (타이틀 + 쉬운 사주풀이) — 결과 화면 진입 시 자동 생성 ──────
+
+export async function generateSajuIntro(
+  apiKey: string,
+  name: string,
+  gender: string,
+  mbti: string,
+  sajuResult: SajuResult,
+  birthYear: string,
+  birthMonth: string,
+  birthDay: string,
+  hourBranchName: string,
+): Promise<SajuIntro> {
+  const { yearPillar, monthPillar, dayPillar, hourPillar, elementCounts, dayStem, dayStemElement } = sajuResult;
+  const genderText = gender === 'male' ? '남성' : '여성';
+
+  const prompt = `당신은 대한민국 최고 권위의 명리학(사주팔자) 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
+아래 사주 및 MBTI 정보를 가지고 ${name}(${genderText}) 님을 위한 첫인상 소개 보고서를 작성해 주세요.
+
+【 사주 원국 】
+- 생년월일시: ${birthYear}년 ${birthMonth}월 ${birthDay}일 ${hourBranchName}
+- 연주(年柱): ${yearPillar.hanjaText}(${yearPillar.text})
+- 월주(月柱): ${monthPillar.hanjaText}(${monthPillar.text})
+- 일주(日柱): ${dayPillar.hanjaText}(${dayPillar.text}) ← 본인의 본질
+- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})
+- 일간(日干): ${dayStem}(${ELEMENT_KO[dayStemElement]} 에너지)
+- 오행 분포: ${elementCountsStr(elementCounts)}
+
+【 MBTI 】: ${mbti}
+
+【 작성 지침 】
+1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
+2. sajuExplanation은 태어난 연/월/일/시주의 기운과 8글자 명식의 오행 형태를 자연경관이나 일상 사물(예: "눈 덮인 거대한 산속의 한 자루의 촛불")에 비유하여 초보자 눈높이에서 5~6줄로 친절하게 설명해 주세요.
+3. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록(\`\`\`json 등)은 절대 쓰지 마세요.
+
+{
+  "title": "${name} 님의 사주 × MBTI 심층 융합 보고서",
+  "jungianNote": "MBTI ${mbti}와 사주 일간(${dayStem})의 비유적 융합 분석 (2~3문장)",
+  "sajuExplanation": "사주원국 8글자와 각 기둥의 기운을 초보자 눈높이에서 쉽고 흥미진진하게 설명한 종합 해설 (자연 비유 포함, 5~6줄)"
+}`;
+
+  const parsed = await callGeminiJsonApi<SajuIntro>(apiKey, prompt, 2048);
+  return {
+    title: parsed?.title?.trim() || `${mbti} × 사주 심층 융합 분석`,
+    jungianNote: parsed?.jungianNote?.trim()
+      || '타고난 사주 오행의 기운과 MBTI의 성향이 심층적인 시너지와 반전 매력을 만들어냅니다.',
+    sajuExplanation: parsed?.sajuExplanation?.trim()
+      || '당신의 사주원국은 연주(초년운/조상), 월주(사회성/부모), 일주(본인/배우자), 시주(말년/자식)가 조화롭게 어우러진 우주의 지도입니다. 타고난 사주팔자의 글자들은 각각 자연의 오행(나무, 불, 흙, 쇠, 물)을 상징하며, 당신이 세상을 살아가는 데 든든한 밑거름이자 지도 역할을 해줍니다.',
+  };
+}
+
+// ─── 카테고리별 심층 해석 (성격/커리어/연애/재물) — 탭 진입 시 버튼으로 개별 생성 ──
+
+const CATEGORY_META: Record<AiCategoryKey, { label: string; focus: string; fallback: CategoryInterpretation }> = {
+  personality: {
+    label: '성격 및 본질',
+    focus: '타고난 성격, 기질, 내면의 본질을 심층 분석하세요.',
+    fallback: {
+      analysis: '사주의 일간 기운과 MBTI 성향이 합쳐져 강력한 열정을 만듭니다. 상황에 따라 거친 폭풍이 되기도 하고 따뜻한 햇살이 되기도 하는 다채로운 에너지를 가지고 계시네요. 행동력이 뛰어나고 주변을 밝히는 활력이 넘치지만, 때로는 끓어오르는 열정 때문에 정작 자기 자신의 내면을 돌보는 시간이 부족해질 수 있습니다.',
+      factBomb: '겉으로는 용광로처럼 정열적이지만 실상은 3초 만에 방전되어 눕고 싶어 하는 반전의 행동파시네요!',
+      luckyItem: '🍀 럭키 아이템: 딥 블루 스카프 | ⚠️ 상극: 대책 없이 무계획으로 밀어붙이는 사람',
+    },
+  },
+  career: {
+    label: '커리어 및 업무 스타일',
+    focus: '직업적 적성, 업무 스타일, 조직 생활에서의 강약점을 심층 분석하세요.',
+    fallback: {
+      analysis: '타고난 분석력과 독창적인 직관이 만나 직장이나 업무 환경에서 아이디어 창고 역할을 톡톡히 해냅니다. 사주의 오행 균형과 MBTI의 판단 기획력이 결합될 때 추진력이 배가됩니다. 단순 반복적인 사무 업무보다는 본인의 권한이 보장되고 새로운 전략을 기획하는 창의적 분야에서 압도적인 성과를 냅니다.',
+      factBomb: '머릿속으로 이미 우주를 창조하셨지만, 막상 엑셀 입력이나 단순 문서 작업 앞에서는 영혼이 탈출하시는군요!',
+      luckyItem: '🍀 럭키 아이템: 노이즈 캔슬링 헤드폰 | ⚠️ 상극: 감정적으로 일하고 징징대는 직장 동료',
+    },
+  },
+  romance: {
+    label: '연애 및 인간관계',
+    focus: '연애 스타일, 사랑을 표현하는 방식, 인간관계 패턴을 심층 분석하세요.',
+    fallback: {
+      analysis: '연애할 때는 뜨겁고 솔직하며 상대방의 진심을 누구보다 깊게 파악하는 능력이 있습니다. 서로의 독립적인 개인 공간과 시간을 존중해 줄 때 관계가 오래 유지됩니다. 밀당이나 애매모호한 태도를 가장 싫어하며, 본인의 솔직함을 바다처럼 포용해 주는 따뜻하고 안정적인 사람을 만났을 때 비로소 안식처를 찾습니다.',
+      factBomb: '상대방에게 다 맞춰줄 것처럼 굴지만 사실 자기만의 고집과 구역은 절대 타협 안 하는 은근한 독재자 성향이시네요!',
+      luckyItem: '🍀 럭키 아이템: 따뜻한 우디 향수 | ⚠️ 상극: 답장 늦고 돌려 말하는 밀당형 인간',
+    },
+  },
+  wealth: {
+    label: '재물 및 소비 습관',
+    focus: '재물을 모으는 성향, 소비/지출 패턴, 재테크 성향을 심층 분석하세요.',
+    fallback: {
+      analysis: '재물을 모으는 사주적 포텐셜과 MBTI의 정보 수집 능력이 우수하여 돈을 버는 감각이 뛰어납니다. 다만 기분이 좋을 때나 스트레스를 받았을 때 순간적인 보상 심리로 나가는 지출을 주의해야 합니다. 장기적인 자산 관리 시스템을 구축하면 크게 부를 축적할 기회가 반드시 찾아옵니다.',
+      factBomb: '돈을 벌 때는 사자처럼 매섭게 벌지만, 스트레스받으면 홧김 비용으로 통장을 시원하게 비워버리시네요!',
+      luckyItem: '🍀 럭키 아이템: 자동 적금 통장 | ⚠️ 상극: "이거 대박이다"라며 한탕주의 투자 권하는 지인',
+    },
+  },
+};
+
+export async function generateCategoryInterpretation(
+  apiKey: string,
+  name: string,
+  gender: string,
+  mbti: string,
+  sajuResult: SajuResult,
+  category: AiCategoryKey,
+): Promise<CategoryInterpretation> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+  const meta = CATEGORY_META[category];
+
+  const prompt = `당신은 대한민국 최고 권위의 명리학(사주팔자) 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
+아래 사주 및 MBTI 정보를 가지고 ${name}(${genderText}) 님의 [${meta.label}]에 대해 위트 있는 팩폭 분석을 작성해 주세요.
+
+【 사주 원국 요약 】
+- 이름: ${name} (${genderText})
+- 일간(日干): ${sajuResult.dayStem}(${ELEMENT_KO[sajuResult.dayStemElement]} 에너지)
+- 일주(日柱): ${sajuResult.dayPillar.hanjaText}(${sajuResult.dayPillar.text})
+- 오행 분포: ${elementCountsStr(sajuResult.elementCounts)}
+
+【 MBTI 】: ${mbti}
+
+【 작성 지침 】
+1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
+2. 톤앤매너: 예의를 갖추되 정곡을 찌르는 존댓말 팩폭("~해요", "~입니다") 사용.
+3. ${meta.focus} 5~7줄 이상의 풍부한 심층 분석으로 작성하세요.
+4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+
+{
+  "analysis": "${meta.label} 심층 분석 (쉬운 비유 사용, 5~7줄)",
+  "factBomb": "🔥 뼈 때리는 팩폭 한줄평 (존댓말 매운맛)",
+  "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
+}`;
+
+  const parsed = await callGeminiJsonApi<CategoryInterpretation>(apiKey, prompt, 2048);
+  return {
+    analysis: parsed?.analysis?.trim() || meta.fallback.analysis,
+    factBomb: parsed?.factBomb?.trim() || meta.fallback.factBomb,
+    luckyItem: parsed?.luckyItem?.trim() || meta.fallback.luckyItem,
+  };
+}
+
+// ─── 3대 실천 처방전 ──────────────────────────────────────────────────────
+
+export async function generatePrescriptions(
+  apiKey: string,
+  name: string,
+  gender: string,
+  mbti: string,
+  sajuResult: SajuResult,
+): Promise<string[]> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+
+  const prompt = `당신은 대한민국 최고 권위의 명리학 전문가입니다.
+아래 사주 및 MBTI 정보를 바탕으로 ${name}(${genderText}) 님을 위한 [3가지 현실 실천 처방전]을 작성해 주세요.
+
+【 사주 원국 요약 】
+- 일간(日干): ${sajuResult.dayStem}(${ELEMENT_KO[sajuResult.dayStemElement]} 에너지)
+- 오행 분포: ${elementCountsStr(sajuResult.elementCounts)}
+- MBTI: ${mbti}
+
+【 작성 지침 】
+1. 오행 과부족과 MBTI 성향을 반영한, 오늘부터 바로 실천할 수 있는 현실적인 행동 지침 3가지를 제시하세요.
+2. 각 항목은 1~2문장의 구체적인 존댓말 문장으로 작성하세요.
+3. 반드시 아래 JSON 형식 그대로만 작성하세요.
+
+{
+  "prescriptions": [
+    "🎯 1. (현실적인 1번째 실천 처방전)",
+    "🎯 2. (현실적인 2번째 실천 처방전)",
+    "🎯 3. (현실적인 3번째 실천 처방전)"
+  ]
+}`;
+
+  const parsed = await callGeminiJsonApi<{ prescriptions: string[] }>(apiKey, prompt, 1024);
+  if (Array.isArray(parsed?.prescriptions) && parsed.prescriptions.length >= 3) {
+    return parsed.prescriptions;
+  }
+  return [
+    '🎯 1. 홧김에 시작하는 계획은 24시간 동안 냉각기를 두고 다시 검토하세요.',
+    '🎯 2. 사주 오행의 불균형을 막기 위해 하루 20분씩 명상이나 온전한 휴식을 가지세요.',
+    '🎯 3. 감정적인 소모를 줄이고, 나만의 현실적인 자산 지출 기준을 명확히 설정하세요.',
+  ];
+}
+
 /**
  * 풍수 수리 가이드 신규 프롬프트 및 API 호출 함수
  */
@@ -286,12 +334,7 @@ export async function generateFengShuiInterpretation(
   birthDay: string,
   elementCounts: ElementCounts
 ): Promise<string> {
-  const elementKo: Record<string, string> = {
-    wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)'
-  };
-  const elemStr = Object.entries(elementCounts)
-    .map(([k, v]) => `${elementKo[k]} ${v}개`)
-    .join(', ');
+  const elemStr = elementCountsStr(elementCounts);
 
   const prompt = `당신은 명리학 및 동양 풍수 인테리어 전문가입니다.
 아래 사용자 정보를 바탕으로, 현대 생활에서 실천하기 쉬운 [풍수 수리 가이드]를 만들어 주세요.
@@ -349,6 +392,79 @@ export async function generateFortuneInterpretation(
 }
 
 /**
+ * 오행(五行) 분포 종합 해설 — 강함/부족 개별 문구가 아닌, 5개 수치 전체를 종합한 맞춤 해설
+ */
+export async function generateElementSummaryInterpretation(
+  apiKey: string,
+  name: string,
+  elementCounts: ElementCounts,
+): Promise<string> {
+  const elemStr = elementCountsStr(elementCounts);
+
+  const prompt = `당신은 명리학 오행 전문가입니다.
+아래 사용자의 오행(五行) 분포 전체를 종합해서, 사주 비전공자도 이해할 수 있는 [오행 종합 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 오행 분포: ${elemStr}
+
+【 작성 지침 】
+1. 5개 오행(목/화/토/금/수) 수치를 하나씩 개별로 나열하지 말고, 전체적인 균형/불균형을 하나의 이야기로 종합해서 설명하세요.
+2. 가장 강한 오행과 가장 약한(또는 없는) 오행이 서로 어떻게 영향을 주고받는지도 쉬운 비유로 짚어주세요.
+3. 한자 용어 대신 일상적인 비유를 사용하고, 6~8줄 분량의 친근한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '오행이 골고루 조화를 이루고 있어 안정적인 기운을 가지고 있습니다. 강점을 살리고 부족한 기운은 색상이나 방위로 보완해보세요.'
+  );
+}
+
+/**
+ * 궁합 조합표(삼합/육합/충/형/파/해) 종합 해설
+ */
+export interface CompatibilitySummaryInput {
+  dayBranchAnimal: string;
+  dayBranchHanja: string;
+  samhap: string[];
+  yukhap: string | null;
+  chung: string | null;
+  hyeong: string[];
+  pa: string | null;
+  hae: string | null;
+}
+
+export async function generateCompatibilitySummaryInterpretation(
+  apiKey: string,
+  name: string,
+  input: CompatibilitySummaryInput,
+): Promise<string> {
+  const prompt = `당신은 명리학 궁합 전문가입니다.
+아래 사용자의 일지(日支) 기준 궁합 조합 결과 전체를 종합해서, 한자 용어를 몰라도 이해할 수 있는 [궁합 종합 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 일지: ${input.dayBranchHanja}(${input.dayBranchAnimal}띠)
+- 삼합(베스트 궁합): ${input.samhap.length > 0 ? input.samhap.join(', ') : '없음'}
+- 육합(찰떡 궁합): ${input.yukhap ?? '없음'}
+- 충(갈등 주의): ${input.chung ?? '없음'}
+- 형(스트레스 주의): ${input.hyeong.length > 0 ? input.hyeong.join(', ') : '없음'}
+- 파(틀어짐 주의): ${input.pa ?? '없음'}
+- 해(은근한 마찰): ${input.hae ?? '없음'}
+
+【 작성 지침 】
+1. "삼합", "육합", "충", "형", "파", "해" 같은 한자 용어를 그대로 나열하지 말고, "이런 띠를 만나면 이런 케미가 난다"는 식으로 자연스럽게 풀어서 설명하세요.
+2. 잘 맞는 상대와 조심해야 할 상대를 한 이야기 흐름 안에서 균형 있게 다루세요.
+3. 6~8줄 분량의 친근한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '전반적으로 무난한 궁합 흐름을 가지고 있습니다. 잘 맞는 상대와는 편안한 관계를, 안 맞는 상대와는 적당한 거리를 유지하면 좋습니다.'
+  );
+}
+
+/**
  * 사주 4기둥 개별 클릭 시 Interactive AI 심층 해석 API
  */
 export async function generatePillarInterpretation(
@@ -360,7 +476,7 @@ export async function generatePillarInterpretation(
   pillarHanja: string,
   pillarDesc: string
 ): Promise<string> {
-  const prompt = `당신은 명리 상담가입니다. 
+  const prompt = `당신은 명리 상담가입니다.
 ${name} 님의 사주원국 중 [${pillarLabel}]인 [${pillarHanja}(${pillarText})] 기둥에 대해 실시간 상세 해석을 작성해 주세요.
 
 【 세부 정보 】
