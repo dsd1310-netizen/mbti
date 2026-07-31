@@ -97,7 +97,13 @@ export default function App() {
 
   // 카카오톡 결과 공유 기능
   const handleKakaoShare = async () => {
-    const KAKAO_APP_KEY = (import.meta.env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
+    const KAKAO_APP_KEY = import.meta.env.VITE_KAKAO_JS_KEY as string;
+    console.log('KAKAO_APP_KEY=', KAKAO_APP_KEY);
+
+    if (!KAKAO_APP_KEY) {
+      showToast('카카오 앱 키가 설정되어 있지 않습니다. VITE_KAKAO_JS_KEY 환경 변수를 확인해주세요.');
+      return;
+    }
 
     if (!result || !result.aiData) {
       showToast('공유할 분석 결과가 없습니다.');
@@ -107,22 +113,28 @@ export default function App() {
     // ── SDK 로드 대기 ────────────────────────────────
     let Kakao = (window as any).Kakao;
 
-    // SDK가 아직 없는 경우 → 동적 스크립트 삽입 후 대기
     if (!Kakao) {
       try {
         await new Promise<void>((resolve, reject) => {
-          // 이미 같은 src 스크립트가 있으면 중복 삽입 방지
-          const existing = document.querySelector<HTMLScriptElement>(
-            'script[src*="kakao_js_sdk"]'
-          );
+          const existing = document.querySelector<HTMLScriptElement>('script[src*="kakao_js_sdk"]');
           if (existing) {
-            // 이미 태그는 있지만 아직 로드 완료 전인 경우
+            if ((window as any).Kakao) {
+              resolve();
+              return;
+            }
+            if (existing.readyState === 'loaded' || existing.readyState === 'complete') {
+              // 이미 로드된 상태지만 Kakao 객체가 아직 준비되지 않았다면 약간 대기
+              setTimeout(() => {
+                if ((window as any).Kakao) resolve();
+                else reject(new Error('Kakao SDK는 로드되었으나 Kakao 객체를 찾을 수 없습니다.'));
+              }, 0);
+              return;
+            }
             existing.addEventListener('load', () => resolve(), { once: true });
             existing.addEventListener('error', () => reject(new Error('Kakao SDK load error')), { once: true });
-            // 이미 실행 완료된 경우 Kakao 객체가 있을 수 있음
-            if ((window as any).Kakao) resolve();
             return;
           }
+
           const script = document.createElement('script');
           script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
           script.async = true;
