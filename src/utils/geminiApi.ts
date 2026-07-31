@@ -310,6 +310,45 @@ export async function generateFengShuiInterpretation(
 }
 
 /**
+ * 대운/세운 흐름 해설 (현재 대운 1개 + 최근 3개년 세운)
+ */
+export async function generateFortuneInterpretation(
+  apiKey: string,
+  name: string,
+  dayStem: string,
+  daeunAge: number,
+  daeunGanji: string,
+  daeunHanja: string,
+  seunEntries: { year: number; ganji: string; hanja: string; isCurrent: boolean }[]
+): Promise<string> {
+  const seunStr = seunEntries
+    .map(s => `- ${s.year}년${s.isCurrent ? '(올해)' : ''}: ${s.hanja}(${s.ganji})`)
+    .join('\n  ');
+
+  const prompt = `당신은 대한민국 최고 권위의 명리학 전문가입니다.
+아래 사용자의 현재 대운과 최근 3개년 세운 정보를 바탕으로, 사주 비전공자도 쉽게 이해할 수 있는 [운세 흐름 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 일간(본인의 기운): ${dayStem}
+- 현재 대운: ${daeunAge}세부터 시작 · ${daeunHanja}(${daeunGanji})
+- 최근 3개년 세운:
+  ${seunStr}
+
+【 작성 지침 】
+1. 비겁/식상/관성 같은 전문 용어 대신 "계절", "파도", "바람" 같은 쉬운 비유로 현재 대운이 어떤 흐름의 10년인지 설명하세요.
+2. 일간과 대운 간지가 만났을 때 전반적으로 어떤 성격의 시기인지(기회의 시기/내실을 다지는 시기/변화의 시기 등) 짚어주세요.
+3. 최근 3개년 세운의 흐름이 그 대운 위에서 어떻게 작용하는지 - 작년은 어떤 해였을지, 올해는 어떤 해인지, 내년은 무엇을 준비하면 좋을지 자연스럽게 이어서 설명하세요.
+4. 다정하지만 확신 있는 어조로, 6~8줄 분량의 친근한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '지금은 차근차근 내실을 다지며 다음 기회를 준비하는 흐름의 시기입니다. 올해는 새로운 인연과 기회에 마음을 열어두면 좋은 해입니다.'
+  );
+}
+
+/**
  * 사주 4기둥 개별 클릭 시 Interactive AI 심층 해석 API
  */
 export async function generatePillarInterpretation(

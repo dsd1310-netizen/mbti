@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import heroImage from './assets/hero.png';
 import { calculateSaju, HOUR_BRANCHES, EARTHLY_BRANCHES, SajuResult } from './utils/sajuCalculator';
-import { generateSajuInterpretation, generateFengShuiInterpretation, AiInterpretation } from './utils/geminiApi';
+import { generateSajuInterpretation, generateFengShuiInterpretation, generateFortuneInterpretation, AiInterpretation } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
@@ -55,6 +55,10 @@ function fengShuiCacheKey(f: { name: string; birthYear: string; birthMonth: stri
   return `saju_fengshui_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
 }
 
+function unseCacheKey(f: { name: string; birthYear: string; birthMonth: string; birthDay: string }, year: number): string {
+  return `saju_unse_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${year}`;
+}
+
 // Gemini API 키는 사용자에게 노출/입력받지 않고 내장 키만 사용합니다.
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
 
@@ -80,6 +84,8 @@ export default function App() {
   const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
   const [fengShuiText, setFengShuiText] = useState<string | null>(null);
   const [fengShuiLoading, setFengShuiLoading] = useState(false);
+  const [unseText, setUnseText] = useState<string | null>(null);
+  const [unseLoading, setUnseLoading] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const pdfRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +99,13 @@ export default function App() {
     if (!result) { setFengShuiText(null); return; }
     const cached = localStorage.getItem(fengShuiCacheKey(result.formData));
     setFengShuiText(cached);
+  }, [result]);
+
+  // 운세(대운/세운) 해설 캐시 로드 (이름+생년월일+연도 기준)
+  useEffect(() => {
+    if (!result) { setUnseText(null); return; }
+    const cached = localStorage.getItem(unseCacheKey(result.formData, new Date().getFullYear()));
+    setUnseText(cached);
   }, [result]);
 
   // 카카오톡 결과 공유 기능
@@ -229,6 +242,42 @@ export default function App() {
     }
   };
 
+  // 운세(현재 대운 + 최근 3개년 세운) 해설 AI 생성 (연도 기준 캐싱)
+  const handleGenerateUnse = async () => {
+    if (!result) return;
+    if (!GEMINI_API_KEY) {
+      showToast('AI 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const nowYear = new Date().getFullYear();
+    const daeunIdx = result.sajuResult.daeunList.reduce(
+      (acc, entry, idx) => (entry.age <= currentAge ? idx : acc), -1
+    );
+    const daeun = result.sajuResult.daeunList[daeunIdx] ?? result.sajuResult.daeunList[0];
+    const seunEntries = result.sajuResult.seunList
+      .filter(s => s.year >= nowYear - 1 && s.year <= nowYear + 1)
+      .map(s => ({ year: s.year, ganji: `${s.stem}${s.branch}`, hanja: `${s.stemHanja}${s.branchHanja}`, isCurrent: s.year === nowYear }));
+
+    setUnseLoading(true);
+    try {
+      const text = await generateFortuneInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.sajuResult.dayStem,
+        daeun.age,
+        `${daeun.stem}${daeun.branch}`,
+        `${daeun.stemHanja}${daeun.branchHanja}`,
+        seunEntries,
+      );
+      setUnseText(text);
+      localStorage.setItem(unseCacheKey(result.formData, nowYear), text);
+    } catch (err: any) {
+      showToast(`운세 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setUnseLoading(false);
+    }
+  };
+
   // 보고서형 PDF 파일 다운로드 기능
   // html2canvas + jsPDF를 직접 사용해 섹션(.pdf-page)별로 캡처 후 페이지를 이어붙임.
   // (html2pdf.js 래퍼는 내부적으로 opacity:0 오버레이에 콘텐츠를 복제해 캡처하는 구조라
@@ -237,12 +286,15 @@ export default function App() {
     if (!result || !pdfRef.current) return;
     setPdfGenerating(true);
     try {
-      // 풍수 가이드가 아직 없으면 PDF에 포함하기 위해 먼저 생성 시도
+      // 풍수 가이드 / 운세 해설이 아직 없으면 PDF에 포함하기 위해 먼저 생성 시도
       if (!fengShuiText && GEMINI_API_KEY) {
         await handleGenerateFengShui();
-        // setState가 DOM(pdfRef)에 반영될 때까지 다음 두 프레임을 대기
-        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       }
+      if (!unseText && GEMINI_API_KEY) {
+        await handleGenerateUnse();
+      }
+      // setState가 DOM(pdfRef)에 반영될 때까지 다음 두 프레임을 대기
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import('html2canvas'),
@@ -882,6 +934,52 @@ export default function App() {
               </div>
             </div>
 
+            {/* 운세 해설 (현재 대운 + 최근 3개년 세운) */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div>
+                  <div className="section-label">🔮 AI 운세 해설</div>
+                  <div className="section-title">대운/세운이 무슨 뜻인지 궁금하다면</div>
+                </div>
+                {unseText && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('운세 해설', `${result.formData.name}님의 운세 해설`, unseText)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+
+              {unseText ? (
+                <>
+                  <div className="deep-analysis-text">{unseText}</div>
+                  <button
+                    className="btn-secondary"
+                    style={{ marginTop: 12, fontSize: 12 }}
+                    onClick={handleGenerateUnse}
+                    disabled={unseLoading}
+                  >
+                    {unseLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
+                  </button>
+                </>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    대운/세운 간지를 그냥 보면 무슨 뜻인지 알기 어렵죠. 지금 대운과 최근 3개년 세운이 어떤 흐름인지 AI가 쉽게 풀어드려요.
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateUnse} disabled={unseLoading}>
+                    {unseLoading ? (
+                      <span>✨ 운세 해설 생성 중...</span>
+                    ) : (
+                      <span>🔮 운세 해설 생성하기</span>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
             </div>
             )}
 
@@ -1380,6 +1478,12 @@ export default function App() {
                 <tr>{result.sajuResult.seunList.map(s => <td key={s.year} className={s.year === currentYear ? 'pdf-current' : ''}>{s.stemHanja}{s.branchHanja}</td>)}</tr>
               </tbody>
             </table>
+            {unseText && (
+              <div className="pdf-card" style={{ marginTop: 20 }}>
+                <div className="pdf-block-title">🔮 AI 운세 해설</div>
+                <p className="pdf-text">{unseText}</p>
+              </div>
+            )}
           </div>
 
           {/* P5: 궁합 조합표 */}
