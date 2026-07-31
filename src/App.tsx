@@ -66,10 +66,9 @@ export default function App() {
   const [result, setResult] = useState<AppResult | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
 
-  // 저장된 API 키 & 북마크 로드
   useEffect(() => {
     const envKey = ((import.meta as any).env.VITE_GEMINI_API_KEY as string) || '';
     const savedKey = localStorage.getItem('saju_gemini_key') ?? '';
@@ -87,17 +86,32 @@ export default function App() {
 
   // 카카오톡 결과 공유 기능
   const handleKakaoShare = async () => {
-    const kakaoKey = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
-    if (!kakaoKey) {
-      showToast('카카오톡 공유 JavaScript Key가 설정되지 않았습니다. (.env 파일을 확인해주세요)');
+    const KAKAO_APP_KEY = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
+
+    if (!result || !result.aiData) {
+      showToast('공유할 분석 결과가 없습니다.');
       return;
     }
 
-    let { Kakao } = window as any;
+    // ── SDK 로드 대기 ────────────────────────────────
+    let Kakao = (window as any).Kakao;
+
+    // SDK가 아직 없는 경우 → 동적 스크립트 삽입 후 대기
     if (!Kakao) {
-      // SDK가 아직 로드되지 않은 경우 동적으로 스크립트 삽입 및 대기
       try {
         await new Promise<void>((resolve, reject) => {
+          // 이미 같은 src 스크립트가 있으면 중복 삽입 방지
+          const existing = document.querySelector<HTMLScriptElement>(
+            'script[src*="kakao_js_sdk"]'
+          );
+          if (existing) {
+            // 이미 태그는 있지만 아직 로드 완료 전인 경우
+            existing.addEventListener('load', () => resolve(), { once: true });
+            existing.addEventListener('error', () => reject(new Error('Kakao SDK load error')), { once: true });
+            // 이미 실행 완료된 경우 Kakao 객체가 있을 수 있음
+            if ((window as any).Kakao) resolve();
+            return;
+          }
           const script = document.createElement('script');
           script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
           script.async = true;
@@ -108,50 +122,61 @@ export default function App() {
         Kakao = (window as any).Kakao;
       } catch (err) {
         console.error('Failed to load Kakao SDK dynamically:', err);
+        showToast('카카오 SDK 로드 실패. 네트워크/광고 차단기를 확인해주세요.');
+        return;
       }
     }
 
-   if (!Kakao) {
+    if (!Kakao) {
       showToast('카카오톡 SDK 로드에 실패했습니다. 네트워크 환경 또는 광고 차단 프로그램을 확인해주세요.');
       return;
     }
 
-    // 대표 JavaScript 키로 직접 안전하게 초기화
+    // ── 초기화 (중복 방지) ───────────────────────────
     if (!Kakao.isInitialized()) {
       try {
-        Kakao.init('6a1062db91e2cfd94596414ebf75a891');
+        Kakao.init(KAKAO_APP_KEY);
       } catch (err) {
         console.error('Kakao init error:', err);
+        showToast('카카오 SDK 초기화에 실패했습니다. 앱 키를 확인해주세요.');
+        return;
       }
     }
 
-    if (!result || !result.aiData) {
-      showToast('공유할 분석 결과가 없습니다.');
-      return;
-    }
+    // ── 공유 URL 결정 ─────────────────────────────────
+    // localhost 환경에서는 카카오 공유가 동작하지 않습니다.
+    // 카카오 개발자 콘솔에 등록된 배포 도메인 URL을 사용해야 합니다.
+    const shareUrl = window.location.href.includes('localhost')
+      ? 'https://mbti-delta-red.vercel.app/'
+      : window.location.href;
 
-    // 카카오톡 공유하기 실행 (올바른 영문 규격)
-    Kakao.Share.sendDefault({
-      objectType: 'feed',
-      content: {
-        title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
-        description: `팩폭: ${result.aiData.personality.factBomb}`,
-        imageUrl: 'https://images.unsplash.com/photo-1506318137071-a8e063b4bec0',
-        link: {
-          mobileWebUrl: window.location.href,
-          webUrl: window.location.href,
-        },
-      },
-      buttons: [
-        {
-          title: '나도 분석해보기',
+    // ── 공유 실행 ────────────────────────────────────
+    try {
+      Kakao.Share.sendDefault({
+        objectType: 'feed',
+        content: {
+          title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
+          description: `${result.formData.mbti} | ${result.sajuResult.yearPillar.text} ${result.sajuResult.monthPillar.text} ${result.sajuResult.dayPillar.text} | 팩폭: ${result.aiData.personality.factBomb.slice(0, 60)}...`,
+          imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/640px-Camponotus_flavomarginatus_ant.jpg',
           link: {
-            mobileWebUrl: window.location.href,
-            webUrl: window.location.href,
+            mobileWebUrl: shareUrl,
+            webUrl: shareUrl,
           },
         },
-      ],
-    });
+        buttons: [
+          {
+            title: '나도 분석해보기 🔮',
+            link: {
+              mobileWebUrl: shareUrl,
+              webUrl: shareUrl,
+            },
+          },
+        ],
+      });
+    } catch (err: any) {
+      console.error('Kakao Share error:', err);
+      showToast(`카카오 공유 오류: ${err?.message ?? '알 수 없는 오류'}. 카카오 앱 도메인 등록을 확인해주세요.`);
+    }
   };
 
   // 보고서형 PDF 파일 다운로드 기능 (인쇄 친화적 팝업 출력 창)

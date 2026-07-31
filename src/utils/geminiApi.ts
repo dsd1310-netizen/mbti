@@ -138,6 +138,7 @@ export async function generateSajuInterpretation(
   birthMonth: string,
   birthDay: string,
   hourBranchName: string,
+  onStatusChange?: (status: string) => void
 ): Promise<AiInterpretation> {
   const { yearPillar, monthPillar, dayPillar, hourPillar, elementCounts, dayStem, dayStemElement } = sajuResult;
 
@@ -208,7 +209,14 @@ export async function generateSajuInterpretation(
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
       try {
+        if (onStatusChange) {
+          onStatusChange(`Gemini AI 분석 중... (${model} 모델, ${attempt}/3차 시도)`);
+        }
+
         if (attempt > 1) {
           const delayMs = attempt * 1500;
           await sleep(delayMs);
@@ -225,7 +233,10 @@ export async function generateSajuInterpretation(
               responseMimeType: 'application/json',
             },
           }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
@@ -252,6 +263,7 @@ export async function generateSajuInterpretation(
 
         return buildSafeResult({}, mbti);
       } catch (err: any) {
+        clearTimeout(timeoutId);
         lastError = err;
         if (attempt < maxRetries) {
           console.warn(`[GeminiAPI] ${model} 호출 실패, 재시도 대기...`, err?.message);
@@ -261,4 +273,133 @@ export async function generateSajuInterpretation(
   }
 
   throw lastError || new Error('현재 Gemini API 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+}
+
+/**
+ * 풍수 수리 가이드 신규 프롬프트 및 API 호출 함수
+ */
+export async function generateFengShuiInterpretation(
+  apiKey: string,
+  name: string,
+  birthYear: string,
+  birthMonth: string,
+  birthDay: string,
+  elementCounts: Record<string, number>
+): Promise<string> {
+  const elementKo: Record<string, string> = {
+    wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)'
+  };
+  const elemStr = Object.entries(elementCounts)
+    .map(([k, v]) => `${elementKo[k]} ${v}개`)
+    .join(', ');
+
+  const prompt = `당신은 명리학 및 동양 풍수 인테리어 전문가입니다.
+아래 사용자 정보를 바탕으로, 현대 생활에서 실천하기 쉬운 [풍수 수리 가이드]를 만들어 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 생년월일: ${birthYear}년 ${birthMonth}월 ${birthDay}일
+- 오행 분포: ${elemStr}
+
+【 작성 지침 】
+1. 부족하거나 과한 오행 에너지를 보완하기 위해 행운을 불러오는 추천 색상과 행운의 방위(동서남북)를 짚어주세요.
+2. 방안의 가구 배치나 소품 인테리어 팁, 일상에서 쉽게 적용할 수 있는 보완법을 알려주세요.
+3. 다정한 전문가의 어조로 4~5줄의 명확하고 따뜻한 한글 텍스트로 설명하세요. JSON 형식이 아닌 일반 줄바꿈 텍스트로 직접 출력해 주세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, '사주 오행에 맞춰 남향이나 밝은 톤의 소품을 두고, 숫자 3과 8을 활용해 보세요. 주변에 초록 식물을 키우면 행운이 따릅니다.');
+}
+
+/**
+ * 사주 4기둥 개별 클릭 시 Interactive AI 심층 해석 API
+ */
+export async function generatePillarInterpretation(
+  apiKey: string,
+  name: string,
+  mbti: string,
+  pillarLabel: string,
+  pillarText: string,
+  pillarHanja: string,
+  pillarDesc: string
+): Promise<string> {
+  const prompt = `당신은 명리 상담가입니다. 
+${name} 님의 사주원국 중 [${pillarLabel}]인 [${pillarHanja}(${pillarText})] 기둥에 대해 실시간 상세 해석을 작성해 주세요.
+
+【 세부 정보 】
+- 이름: ${name}
+- MBTI: ${mbti}
+- 대상 기둥: ${pillarLabel} (${pillarHanja} - ${pillarText})
+- 기둥 기본 의미: ${pillarDesc}
+
+【 작성 지침 】
+1. 해당 기둥(${pillarLabel})이 뜻하는 시기적 의미(초년/청년/중년/말년 등)와 대인관계적 의미를 포함하세요.
+2. 간지(${pillarText})가 가진 고유한 오행 성향을 사용자가 이해하기 쉽게 풀어서 알려주세요.
+3. 사용자의 MBTI(${mbti}) 성향과 결합할 때 생기는 잠재적 시너지 또는 충돌 가능성을 현대적으로 해석해 주세요.
+4. 분량은 4~5줄 내외의 친근하고 명확한 존댓말 문장으로 제공해 주세요. (마크다운 형식 없이 일반 텍스트로 바로 출력해 주세요.)`;
+
+  return callGeminiPlainApi(apiKey, prompt, '해당 기둥은 당신의 중심 에너지와 사회적 조화를 의미합니다.');
+}
+
+/**
+ * 일반 텍스트 출력을 위한 Gemini API 호출 함수
+ */
+async function callGeminiPlainApi(
+  apiKey: string,
+  prompt: string,
+  fallbackText: string
+): Promise<string> {
+  let lastError: Error | null = null;
+  const maxRetries = 3;
+
+  for (const model of MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      try {
+        if (attempt > 1) {
+          await sleep(attempt * 1500);
+        }
+
+        const response = await fetch(`${url}?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.8,
+              maxOutputTokens: 2048,
+            },
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          const status = response.status;
+          const msg = (err as { error?: { message?: string } })?.error?.message || `API 오류 (${status})`;
+
+          if (status === 429 || status === 503 || status === 500) {
+            lastError = new Error(msg);
+            continue;
+          }
+          throw new Error(msg);
+        }
+
+        const data = await response.json();
+        const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
+          ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+        return rawText.trim();
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err;
+      }
+    }
+  }
+
+  console.warn('All Gemini models failed:', lastError?.message); return fallbackText;
 }

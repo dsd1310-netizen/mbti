@@ -63,6 +63,8 @@ const ELEMENT_MAP: Record<string, string> = {
   '임': 'water', '계': 'water', '해': 'water', '자': 'water',
 };
 
+type SolarTermEntry = [number, number, number];
+
 export interface Pillar {
   stemIdx: number;
   branchIdx: number;
@@ -81,35 +83,6 @@ export interface ElementCounts {
   earth: number;
   metal: number;
   water: number;
-}
-
-export interface SajuResult {
-  yearPillar: Pillar;
-  monthPillar: Pillar;
-  dayPillar: Pillar;
-  hourPillar: Pillar;
-  elementCounts: ElementCounts;
-  dayStem: string;
-  dayBranch: string;
-  dayStemElement: string;
-}
-
-function makePillar(stemIdx: number, branchIdx: number): Pillar {
-  const sIdx = ((stemIdx % 10) + 10) % 10;
-  const bIdx = ((branchIdx % 12) + 12) % 12;
-  const stem = HEAVENLY_STEMS[sIdx];
-  const branch = EARTHLY_BRANCHES[bIdx];
-  return {
-    stemIdx: sIdx,
-    branchIdx: bIdx,
-    stem: stem.name,
-    branch: branch.name,
-    stemHanja: stem.hanja,
-    branchHanja: branch.hanja,
-    element: stem.element,
-    text: `${stem.name}${branch.name}`,
-    hanjaText: `${stem.hanja}${branch.hanja}`,
-  };
 }
 
 /**
@@ -199,6 +172,195 @@ function calcHourPillar(hourBranchIdx: number, dayStemIdx: number): Pillar {
   return makePillar(stemIdx, hourBranchIdx);
 }
 
+export interface DaeunEntry {
+  age: number;
+  stem: string;
+  branch: string;
+  stemHanja: string;
+  branchHanja: string;
+  element: string;
+}
+
+export interface SeunEntry {
+  year: number;
+  stem: string;
+  branch: string;
+  stemHanja: string;
+  branchHanja: string;
+  element: string;
+}
+
+export interface SajuResult {
+  yearPillar: Pillar;
+  monthPillar: Pillar;
+  dayPillar: Pillar;
+  hourPillar: Pillar;
+  elementCounts: ElementCounts;
+  dayStem: string;
+  dayBranch: string;
+  dayStemElement: string;
+  daeunStartAge: number;
+  daeunList: DaeunEntry[];
+  seunList: SeunEntry[];
+}
+
+function makePillar(stemIdx: number, branchIdx: number): Pillar {
+  const sIdx = ((stemIdx % 10) + 10) % 10;
+  const bIdx = ((branchIdx % 12) + 12) % 12;
+  const stem = HEAVENLY_STEMS[sIdx];
+  const branch = EARTHLY_BRANCHES[bIdx];
+  return {
+    stemIdx: sIdx,
+    branchIdx: bIdx,
+    stem: stem.name,
+    branch: branch.name,
+    stemHanja: stem.hanja,
+    branchHanja: branch.hanja,
+    element: stem.element,
+    text: `${stem.name}${branch.name}`,
+    hanjaText: `${stem.hanja}${branch.hanja}`,
+  };
+}
+
+/**
+ * 대운(大運) 계산 로직
+ * - 성별 (gender: 'male' | 'female')
+ * - 연간 음양 판단 (연주 천간의 음양)
+ * - 양남음녀 (남자 + 양의 해 / 여자 + 음의 해) -> 순행 (출생일 다음 절기까지 일수 계산)
+ * - 음남양녀 (남자 + 음의 해 / 여자 + 양의 해) -> 역행 (출생일 이전 절기까지 일수 계산)
+ * - 대운수 = 일수 / 3 (나머지 2일 이상 반올림 또는 버림/올림 명리학 규격상 3으로 나눈 몫으로 진입 연령 지정)
+ */
+export function calculateDaeun(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  gender: string,
+  yearPillar: Pillar,
+  monthPillar: Pillar
+): { daeunStartAge: number; daeunList: DaeunEntry[] } {
+  // 연간의 음양 확인
+  const isYangYear = HEAVENLY_STEMS[yearPillar.stemIdx].yinYang === 'yang';
+  const isMale = gender === 'male';
+
+  // 순행 여부 결정
+  // 양남음녀: 남성이면서 양의 해이거나, 여성이면서 음의 해 -> 순행
+  // 음남양녀: 남성이면서 음의 해이거나, 여성이면서 양의 해 -> 역행
+  const isForward = (isMale && isYangYear) || (!isMale && !isYangYear);
+
+  // 대운수 산출 (일수 계산)
+  let diffDays = 3; // 기본값 3세 대운
+  const birthDate = new Date(year, month - 1, day, hour, minute);
+
+  const yearData = SOLAR_TERMS[year];
+  if (yearData) {
+    const currentMonthTermIdx = month - 1; // 0~11
+    
+    let targetTermDate: Date;
+    if (isForward) {
+      // 다음 절기 (현재 월의 절기 또는 다음 절기)
+      // 현재 태어난 시각이 현재 월의 절기보다 뒤라면, 다음 달의 절기를 타겟팅함
+      const currentTermEntry = yearData[currentMonthTermIdx];
+      const currentTermDate = new Date(year, month - 1, currentTermEntry[0], currentTermEntry[1], currentTermEntry[2]);
+      
+      if (birthDate >= currentTermDate) {
+        // 다음 절기로 넘어감
+        const nextMonth = month === 12 ? 1 : month + 1;
+        const nextYear = month === 12 ? year + 1 : year;
+        const nextYearData = SOLAR_TERMS[nextYear];
+        const nextTermEntry = nextYearData ? nextYearData[nextMonth - 1] : [4, 18, 0] as SolarTermEntry;
+        targetTermDate = new Date(nextYear, nextMonth - 1, nextTermEntry[0], nextTermEntry[1], nextTermEntry[2]);
+      } else {
+        targetTermDate = currentTermDate;
+      }
+    } else {
+      // 이전 절기
+      const currentTermEntry = yearData[currentMonthTermIdx];
+      const currentTermDate = new Date(year, month - 1, currentTermEntry[0], currentTermEntry[1], currentTermEntry[2]);
+      
+      if (birthDate < currentTermDate) {
+        // 이전 달의 절기로 넘어감
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prevYearData = SOLAR_TERMS[prevYear];
+        const prevTermEntry = prevYearData ? prevYearData[prevMonth - 1] : [4, 18, 0] as SolarTermEntry;
+        targetTermDate = new Date(prevYear, prevMonth - 1, prevTermEntry[0], prevTermEntry[1], prevTermEntry[2]);
+      } else {
+        targetTermDate = currentTermDate;
+      }
+    }
+
+    const msDiff = Math.abs(birthDate.getTime() - targetTermDate.getTime());
+    const calculatedDays = msDiff / (1000 * 60 * 60 * 24);
+    diffDays = Math.max(1, Math.round(calculatedDays));
+  }
+
+  // 대운 시작 나이 (3으로 나눔, 최소 1)
+  const daeunStartAge = Math.max(1, Math.round(diffDays / 3));
+
+  // 월주 간지 기준으로 대운 리스트 전개
+  const daeunList: DaeunEntry[] = [];
+  let currentStemIdx = monthPillar.stemIdx;
+  let currentBranchIdx = monthPillar.branchIdx;
+
+  for (let i = 1; i <= 10; i++) {
+    if (isForward) {
+      currentStemIdx = (currentStemIdx + 1) % 10;
+      currentBranchIdx = (currentBranchIdx + 1) % 12;
+    } else {
+      currentStemIdx = (currentStemIdx - 1 + 10) % 10;
+      currentBranchIdx = (currentBranchIdx - 1 + 12) % 12;
+    }
+
+    const stem = HEAVENLY_STEMS[currentStemIdx];
+    const branch = EARTHLY_BRANCHES[currentBranchIdx];
+
+    daeunList.push({
+      age: daeunStartAge + (i - 1) * 10,
+      stem: stem.name,
+      branch: branch.name,
+      stemHanja: stem.hanja,
+      branchHanja: branch.hanja,
+      element: stem.element,
+    });
+  }
+
+  return { daeunStartAge, daeunList };
+}
+
+/**
+ * 세운(歲運) 계산 로직
+ * - 현재 연도 기준 ±5년 계산
+ */
+export function calculateSeun(baseYear: number): SeunEntry[] {
+  const startYear = baseYear - 5;
+  const seunList: SeunEntry[] = [];
+
+  for (let i = 0; i < 11; i++) {
+    const currentYear = startYear + i;
+    
+    // 1984년 갑자년(stem=0, branch=0) 기준 계산
+    const diff = currentYear - 1984;
+    const stemIdx = ((diff % 10) + 10) % 10;
+    const branchIdx = ((diff % 12) + 12) % 12;
+
+    const stem = HEAVENLY_STEMS[stemIdx];
+    const branch = EARTHLY_BRANCHES[branchIdx];
+
+    seunList.push({
+      year: currentYear,
+      stem: stem.name,
+      branch: branch.name,
+      stemHanja: stem.hanja,
+      branchHanja: branch.hanja,
+      element: stem.element,
+    });
+  }
+
+  return seunList;
+}
+
 /**
  * 오행 개수 계산
  */
@@ -221,21 +383,55 @@ export function calculateSaju(
   month: number,
   day: number,
   hourBranchId: string,
+  gender: string = 'female',
+  exactHour: number = -1,
+  exactMinute: number = 0
 ): SajuResult {
   const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES[6];
   const hourBranchIdx = hourBranch.branchIdx;
 
-  // 시주 중간 시각으로 계산
-  // 자시는 23시~1시 → 0시로 계산
-  const calcHour = hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1);
-  const calcMinute = 0;
+  // 자시(23:00~01:00) 야자시/조자시 판정 및 시주 시각 보정
+  let calcHour = exactHour;
+  let calcMinute = exactMinute;
 
-  const yearPillar = calcYearPillar(year, month, day, calcHour, calcMinute);
-  const monthPillar = calcMonthPillar(year, month, day, calcHour, calcMinute, yearPillar.stemIdx);
-  const dayPillar = calcDayPillar(year, month, day);
+  if (calcHour === -1) {
+    calcHour = hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1);
+    calcMinute = 0;
+  }
+
+  let finalYear = year;
+  let finalMonth = month;
+  let finalDay = day;
+
+  // 야자시 보정: 밤 23:00 ~ 24:00 사이에 출생했다면 다음날로 일주 계산 (기본 정책 적용)
+  if (calcHour === 23) {
+    const tempDate = new Date(year, month - 1, day);
+    tempDate.setDate(tempDate.getDate() + 1);
+    finalYear = tempDate.getFullYear();
+    finalMonth = tempDate.getMonth() + 1;
+    finalDay = tempDate.getDate();
+  }
+
+  const yearPillar = calcYearPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute);
+  const monthPillar = calcMonthPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute, yearPillar.stemIdx);
+  const dayPillar = calcDayPillar(finalYear, finalMonth, finalDay);
   const hourPillar = calcHourPillar(hourBranchIdx, dayPillar.stemIdx);
 
   const elementCounts = calcElementCounts([yearPillar, monthPillar, dayPillar, hourPillar]);
+
+  // 대운/세운 산출
+  const { daeunStartAge, daeunList } = calculateDaeun(
+    year,
+    month,
+    day,
+    calcHour === -1 ? 12 : calcHour,
+    calcMinute,
+    gender,
+    yearPillar,
+    monthPillar
+  );
+
+  const seunList = calculateSeun(new Date().getFullYear());
 
   return {
     yearPillar,
@@ -246,5 +442,8 @@ export function calculateSaju(
     dayStem: dayPillar.stem,
     dayBranch: dayPillar.branch,
     dayStemElement: dayPillar.element,
+    daeunStartAge,
+    daeunList,
+    seunList,
   };
 }
