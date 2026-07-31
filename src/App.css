@@ -716,6 +716,56 @@ body {
 .element-water { border-color: rgba(96, 165, 250, 0.3); }
 .element-water .element-count { color: #60a5fa; }
 
+.element-badge {
+  margin-top: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 20px;
+  display: inline-block;
+}
+.element-badge-strong {
+  background: rgba(245, 200, 66, 0.18);
+  color: var(--gold);
+  border: 1px solid rgba(245, 200, 66, 0.35);
+}
+.element-badge-weak {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.element-interpretation {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.element-interpretation-text {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  background: rgba(245, 200, 66, 0.05);
+  border: 1px solid rgba(245, 200, 66, 0.15);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.element-interpretation-text.muted {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ── 결과 화면 최상단 섹션 탭 ─────────────────────── */
+.section-tab-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-top: 10px;
+  margin-bottom: -4px;
+  background: linear-gradient(180deg, var(--bg-deep) 70%, rgba(5, 5, 16, 0));
+}
+
 /* ── AI 해석 카드 ───────────────────────────────── */
 .ai-card {
   background: var(--bg-card);
@@ -1300,4 +1350,264 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.5); }
+
+/* ── MBTI 유형카드 ───────────────────────────────── */
+.mbti-card {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.mbti-card-emoji {
+  font-size: 40px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.mbti-card-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.mbti-card-trait {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+.mbti-card-synergy {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  background: rgba(245, 200, 66, 0.05);
+  border: 1px solid rgba(245, 200, 66, 0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+/* ── 대운/세운 표 ────────────────────────────────── */
+.section-subtitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--purple-light);
+  margin-bottom: 10px;
+}
+.daeun-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.daeun-card {
+  flex: 0 0 auto;
+  min-width: 68px;
+  padding: 12px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+  transition: all 0.2s;
+}
+.daeun-card.current {
+  border-color: var(--gold);
+  background: rgba(245, 200, 66, 0.12);
+  box-shadow: 0 0 14px rgba(245, 200, 66, 0.18);
+}
+.daeun-age {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.daeun-card.current .daeun-age { color: var(--gold); font-weight: 700; }
+.daeun-hanja {
+  font-family: 'Noto Serif KR', serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.daeun-card.current .daeun-hanja { color: var(--gold); }
+.daeun-kr {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ── 궁합 조합표 ─────────────────────────────────── */
+.compat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) { .compat-grid { grid-template-columns: 1fr; } }
+.compat-block {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+.compat-block-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+.compat-good { border-color: rgba(52, 211, 153, 0.3); }
+.compat-bad { border-color: rgba(239, 68, 68, 0.25); }
+.compat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.compat-tag {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(52, 211, 153, 0.12);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  white-space: nowrap;
+}
+.compat-tag.bad {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+/* ── PDF 보고서 (html2pdf.js 캡처 전용 — 화면에는 표시되지 않음) ─────────── */
+.pdf-page {
+  width: 794px;
+  min-height: 1123px;
+  box-sizing: border-box;
+  padding: 48px 44px;
+  background: #050510;
+  color: #f0eeff;
+  font-family: 'Noto Sans KR', sans-serif;
+  page-break-after: always;
+}
+.pdf-page:last-child { page-break-after: auto; }
+
+.pdf-page-header {
+  font-family: 'Noto Serif KR', serif;
+  font-size: 24px;
+  font-weight: 900;
+  color: #f5c842;
+  text-align: center;
+  padding-bottom: 16px;
+  margin-bottom: 28px;
+  border-bottom: 2px solid rgba(245, 200, 66, 0.35);
+}
+
+.pdf-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.pdf-meta-grid > div {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+}
+.pdf-meta-label { color: #94a3b8; font-size: 13px; }
+.pdf-meta-value { color: #f0eeff; font-size: 13px; font-weight: 700; }
+
+.pdf-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #a78bfa;
+  margin: 28px 0 14px;
+}
+
+.pdf-pillar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.pdf-pillar-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 12px;
+  padding: 14px 8px;
+  text-align: center;
+}
+.pdf-pillar-label { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
+.pdf-pillar-hanja { font-family: 'Noto Serif KR', serif; font-size: 26px; font-weight: 900; color: #f5c842; }
+.pdf-pillar-kr { font-size: 12px; color: #f0eeff; margin-top: 4px; }
+
+.pdf-element-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.pdf-element-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  border-radius: 12px;
+  padding: 12px 6px;
+  text-align: center;
+  font-size: 12px;
+}
+.pdf-element-count { font-size: 16px; font-weight: 800; color: #34d399; margin-top: 6px; }
+
+.pdf-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.pdf-mbti-emoji { font-size: 40px; margin-bottom: 8px; }
+.pdf-mbti-title { font-size: 18px; font-weight: 800; color: #f5c842; margin-bottom: 12px; }
+.pdf-ai-title { font-family: 'Noto Serif KR', serif; font-size: 18px; font-weight: 900; color: #f0eeff; margin-bottom: 8px; }
+.pdf-block-title { font-size: 14px; font-weight: 800; color: #a78bfa; margin-bottom: 10px; }
+
+.pdf-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.pdf-tag {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.pdf-text { font-size: 13px; line-height: 1.8; color: #f0eeff; margin-bottom: 8px; }
+.pdf-text-muted { font-size: 12px; line-height: 1.8; color: #94a3b8; }
+
+.pdf-factbomb {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffedd5;
+  background: rgba(249, 115, 22, 0.14);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.pdf-lucky {
+  font-size: 12px;
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-top: 6px;
+}
+
+.pdf-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.pdf-table th, .pdf-table td {
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  padding: 10px 4px;
+  text-align: center;
+  font-size: 12px;
+}
+.pdf-table th { color: #94a3b8; font-weight: 700; background: rgba(255, 255, 255, 0.03); }
+.pdf-table td { font-family: 'Noto Serif KR', serif; font-size: 16px; font-weight: 700; color: #f0eeff; }
+.pdf-table .pdf-current { background: rgba(245, 200, 66, 0.16); color: #f5c842 !important; }
 

@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
-import { calculateSaju, HOUR_BRANCHES, SajuResult } from './utils/sajuCalculator';
-import { generateSajuInterpretation, AiInterpretation } from './utils/geminiApi';
+import heroImage from './assets/hero.png';
+import { calculateSaju, HOUR_BRANCHES, EARTHLY_BRANCHES, SajuResult } from './utils/sajuCalculator';
+import { generateSajuInterpretation, generateFengShuiInterpretation, AiInterpretation } from './utils/geminiApi';
+import { MBTI_DATA } from './data/mbtiTypes';
+import { getBranchRelations } from './data/compatibility';
+import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 
 // ─── 타입 ────────────────────────────────────────
 interface FormData {
@@ -47,9 +51,17 @@ const LOADING_MESSAGES = [
   '당신만의 명리 리포트를 완성하는 중...',
 ];
 
+function fengShuiCacheKey(f: { name: string; birthYear: string; birthMonth: string; birthDay: string }): string {
+  return `saju_fengshui_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
+}
+
+// Gemini API 키는 사용자에게 노출/입력받지 않고 내장 키만 사용합니다.
+const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
   const [step, setStep] = useState<Step>('input');
+  const [activeSection, setActiveSection] = useState<'fortune' | 'mbti' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -60,33 +72,32 @@ export default function App() {
     gender: 'female',
     mbti: 'ENTP',
   });
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [loadingIdx, setLoadingIdx] = useState(0);
   const [result, setResult] = useState<AppResult | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
+  const [fengShuiText, setFengShuiText] = useState<string | null>(null);
+  const [fengShuiLoading, setFengShuiLoading] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const pdfRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const envKey = ((import.meta as any).env.VITE_GEMINI_API_KEY as string) || '';
-    const savedKey = localStorage.getItem('saju_gemini_key') ?? '';
-    setApiKey(savedKey || envKey);
-    
     const savedBm = localStorage.getItem('saju_bookmarks');
     if (savedBm) { try { setBookmarks(JSON.parse(savedBm)); } catch {} }
   }, []);
 
-  // API 키 저장
-  const handleApiKeySave = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('saju_gemini_key', key);
-  };
+  // 풍수 수리 가이드 캐시 로드 (이름+생년월일 기준)
+  useEffect(() => {
+    if (!result) { setFengShuiText(null); return; }
+    const cached = localStorage.getItem(fengShuiCacheKey(result.formData));
+    setFengShuiText(cached);
+  }, [result]);
 
   // 카카오톡 결과 공유 기능
   const handleKakaoShare = async () => {
-    const KAKAO_APP_KEY = ((import.meta as any).env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
+    const KAKAO_APP_KEY = (import.meta.env.VITE_KAKAO_JS_KEY as string) || '6a1062db91e2cfd94596414ebf75a891';
 
     if (!result || !result.aiData) {
       showToast('공유할 분석 결과가 없습니다.');
@@ -157,7 +168,7 @@ export default function App() {
         content: {
           title: `🔮 ${result.formData.name}님의 사주 × MBTI 분석 결과`,
           description: `${result.formData.mbti} | ${result.sajuResult.yearPillar.text} ${result.sajuResult.monthPillar.text} ${result.sajuResult.dayPillar.text} | 팩폭: ${result.aiData.personality.factBomb.slice(0, 60)}...`,
-          imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/640px-Camponotus_flavomarginatus_ant.jpg',
+          imageUrl: new URL(heroImage, window.location.origin).href,
           link: {
             mobileWebUrl: shareUrl,
             webUrl: shareUrl,
@@ -179,241 +190,94 @@ export default function App() {
     }
   };
 
-  // 보고서형 PDF 파일 다운로드 기능 (인쇄 친화적 팝업 출력 창)
-  const handleDownloadPDF = () => {
+  // 풍수 수리 가이드 AI 생성 (이름+생년월일 기준 캐싱)
+  const handleGenerateFengShui = async () => {
     if (!result) return;
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      showToast('팝업 차단이 설정되어 있습니다. 팝업을 허용해 주세요.');
+    if (!GEMINI_API_KEY) {
+      showToast('AI 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
-
-    const saju = result.sajuResult;
-    const ai = result.aiData;
-
-    let aiContentHtml = '';
-    if (ai) {
-      aiContentHtml = `
-        <div class="report-section">
-          <h2>🤖 AI 융합 분석: ${ai.title}</h2>
-          <p class="lead-note"><em>${ai.jungianNote}</em></p>
-          
-          <div class="report-block">
-            <h3>🧭 쉬운 사주원국 해설</h3>
-            <p>${ai.sajuExplanation}</p>
-          </div>
-
-          <div class="report-block">
-            <h3>🌟 성격 진단</h3>
-            <p>${ai.personality.analysis}</p>
-            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.personality.factBomb}</p>
-            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.personality.luckyItem}</p>
-          </div>
-
-          <div class="report-block">
-            <h3>💼 커리어 & 재물</h3>
-            <p>${ai.career.analysis}</p>
-            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.career.factBomb}</p>
-            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.career.luckyItem}</p>
-          </div>
-
-          <div class="report-block">
-            <h3>💖 연애 & 인간관계</h3>
-            <p>${ai.romance.analysis}</p>
-            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.romance.factBomb}</p>
-            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.romance.luckyItem}</p>
-          </div>
-
-          <div class="report-block">
-            <h3>💰 재물 & 지출</h3>
-            <p>${ai.wealth.analysis}</p>
-            <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${ai.wealth.factBomb}</p>
-            <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${ai.wealth.luckyItem}</p>
-          </div>
-
-          <div class="report-block">
-            <h3>🎯 3대 실천 처방전</h3>
-            <ul>
-              ${ai.prescriptions.map(p => `<li>${p}</li>`).join('')}
-            </ul>
-          </div>
-        </div>
-      `;
+    setFengShuiLoading(true);
+    try {
+      const text = await generateFengShuiInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.formData.birthYear,
+        result.formData.birthMonth,
+        result.formData.birthDay,
+        result.sajuResult.elementCounts,
+      );
+      setFengShuiText(text);
+      localStorage.setItem(fengShuiCacheKey(result.formData), text);
+    } catch (err: any) {
+      showToast(`풍수 가이드 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setFengShuiLoading(false);
     }
+  };
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${result.formData.name}님의 사주 MBTI 분석 보고서</title>
-        <meta charset="utf-8">
-        <style>
-          body {
-            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-            color: #333;
-            line-height: 1.6;
-            padding: 40px;
-            max-width: 800px;
-            margin: 0 auto;
-          }
-          h1 {
-            text-align: center;
-            font-size: 24px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-          }
-          .meta-table, .saju-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-          }
-          .meta-table th, .meta-table td, .saju-table th, .saju-table td {
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: center;
-          }
-          .meta-table th, .saju-table th {
-            background-color: #f5f5f5;
-            font-weight: bold;
-          }
-          .saju-pillar {
-            font-weight: bold;
-            font-size: 18px;
-            color: #000;
-          }
-          .report-section {
-            margin-top: 30px;
-          }
-          .report-block {
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 1px dashed #ddd;
-          }
-          .report-block h3 {
-            font-size: 16px;
-            color: #111;
-            margin-bottom: 10px;
-            border-left: 4px solid #4f46e5;
-            padding-left: 10px;
-          }
-          .fact-bomb {
-            background-color: #fffbeb;
-            border: 1px solid #fef3c7;
-            padding: 10px;
-            border-radius: 6px;
-            color: #b45309;
-            font-size: 13px;
-          }
-          .lucky-item {
-            color: #059669;
-            font-size: 13px;
-            margin-top: 5px;
-          }
-          .lead-note {
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 20px;
-            background: #f9fafb;
-            padding: 10px;
-            border-radius: 6px;
-          }
-          ul {
-            padding-left: 20px;
-          }
-          li {
-            margin-bottom: 8px;
-          }
-          @media print {
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        <h1>🔮 星命 사주 × MBTI 종합 보고서</h1>
-        
-        <table class="meta-table">
-          <tr>
-            <th>이름</th>
-            <td>${result.formData.name}</td>
-            <th>성별</th>
-            <td>${result.formData.gender === 'male' ? '남성' : '여성'}</td>
-            <th>MBTI</th>
-            <td>${result.formData.mbti}</td>
-          </tr>
-          <tr>
-            <th>생년월일</th>
-            <td colspan="2">${result.formData.birthYear}년 ${result.formData.birthMonth}월 ${result.formData.birthDay}일</td>
-            <th>태어난 시간</th>
-            <td colspan="2">${result.hourBranch.name} (${result.hourBranch.time})</td>
-          </tr>
-        </table>
+  // 보고서형 PDF 파일 다운로드 기능
+  // html2canvas + jsPDF를 직접 사용해 섹션(.pdf-page)별로 캡처 후 페이지를 이어붙임.
+  // (html2pdf.js 래퍼는 내부적으로 opacity:0 오버레이에 콘텐츠를 복제해 캡처하는 구조라
+  //  다크 테마 배경이 통째로 빈 페이지로 캡처되는 문제가 있어 사용하지 않음)
+  const handleDownloadPDF = async () => {
+    if (!result || !pdfRef.current) return;
+    setPdfGenerating(true);
+    try {
+      // 풍수 가이드가 아직 없으면 PDF에 포함하기 위해 먼저 생성 시도
+      if (!fengShuiText && GEMINI_API_KEY) {
+        await handleGenerateFengShui();
+        // setState가 DOM(pdfRef)에 반영될 때까지 다음 두 프레임을 대기
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }
 
-        <h2>🧭 사주원국 명식</h2>
-        <table class="saju-table">
-          <tr>
-            <th>구분</th>
-            <th>시주 (時柱)</th>
-            <th>일주 (日柱)</th>
-            <th>월주 (月柱)</th>
-            <th>연주 (年柱)</th>
-          </tr>
-          <tr class="saju-pillar">
-            <td>천간 (天干)</td>
-            <td>${saju.hourPillar.hanjaText[0]}</td>
-            <td>${saju.dayPillar.hanjaText[0]}</td>
-            <td>${saju.monthPillar.hanjaText[0]}</td>
-            <td>${saju.yearPillar.hanjaText[0]}</td>
-          </tr>
-          <tr class="saju-pillar">
-            <td>지지 (地支)</td>
-            <td>${saju.hourPillar.hanjaText[1]}</td>
-            <td>${saju.dayPillar.hanjaText[1]}</td>
-            <td>${saju.monthPillar.hanjaText[1]}</td>
-            <td>${saju.yearPillar.hanjaText[1]}</td>
-          </tr>
-          <tr>
-            <td>한글</td>
-            <td>${saju.hourPillar.text}</td>
-            <td>${saju.dayPillar.text}</td>
-            <td>${saju.monthPillar.text}</td>
-            <td>${saju.yearPillar.text}</td>
-          </tr>
-        </table>
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
 
-        <h2>🌿 오행 분포</h2>
-        <table class="meta-table">
-          <tr>
-            <th>목(木)</th>
-            <th>화(火)</th>
-            <th>토(土)</th>
-            <th>금(金)</th>
-            <th>수(水)</th>
-          </tr>
-          <tr>
-            <td>${saju.elementCounts.wood}개</td>
-            <td>${saju.elementCounts.fire}개</td>
-            <td>${saju.elementCounts.earth}개</td>
-            <td>${saju.elementCounts.metal}개</td>
-            <td>${saju.elementCounts.water}개</td>
-          </tr>
-        </table>
+      const pageWidth = 794;
+      const pageHeight = 1123;
+      const scale = 2;
+      const pageHeightPx = pageHeight * scale;
+      const pages = Array.from(pdfRef.current.querySelectorAll<HTMLElement>('.pdf-page'));
+      const pdf = new jsPDF({ unit: 'px', format: [pageWidth, pageHeight], orientation: 'portrait' });
+      let isFirstPdfPage = true;
 
-        ${aiContentHtml}
+      for (const pageEl of pages) {
+        const canvas = await html2canvas(pageEl, {
+          scale,
+          backgroundColor: '#050510',
+          useCORS: true,
+          width: pageWidth,
+          windowWidth: pageWidth,
+        });
 
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 500);
-          }
-        </script>
-      </body>
-      </html>
-    `;
+        // 섹션 콘텐츠가 한 페이지보다 길면(AI 분석 등) 세로로 잘라 여러 PDF 페이지로 이어붙임
+        const sliceCount = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
+        for (let s = 0; s < sliceCount; s++) {
+          const sliceHeightPx = Math.min(pageHeightPx, canvas.height - s * pageHeightPx);
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceHeightPx;
+          const ctx = sliceCanvas.getContext('2d')!;
+          ctx.fillStyle = '#050510';
+          ctx.fillRect(0, 0, sliceCanvas.width, sliceHeightPx);
+          ctx.drawImage(canvas, 0, s * pageHeightPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+          if (!isFirstPdfPage) pdf.addPage([pageWidth, pageHeight], 'portrait');
+          isFirstPdfPage = false;
+          const imgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, sliceHeightPx / scale);
+        }
+      }
+
+      pdf.save(`${result.formData.name}_사주MBTI_보고서.pdf`);
+    } catch (err: any) {
+      showToast(`PDF 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setPdfGenerating(false);
+    }
   };
 
   // 북마크
@@ -472,12 +336,11 @@ export default function App() {
       let aiData: AiInterpretation | null = null;
       let errMsg: string | null = null;
 
-      // Gemini AI 해석 (환경변수 키 또는 입력된 키 사용)
-      const effectiveApiKey = apiKey.trim() || ((import.meta as any).env.VITE_GEMINI_API_KEY as string) || '';
-      if (effectiveApiKey.trim()) {
+      // Gemini AI 해석 (내장 API 키 사용)
+      if (GEMINI_API_KEY) {
         try {
           aiData = await generateSajuInterpretation(
-            effectiveApiKey.trim(),
+            GEMINI_API_KEY,
             formData.name,
             formData.gender,
             formData.mbti,
@@ -503,7 +366,35 @@ export default function App() {
     return () => { clearInterval(msgInterval); clearTimeout(timer); };
   }, [step]);
 
-  const handleReset = () => { setStep('input'); setResult(null); setAiError(null); };
+  const handleReset = () => { setStep('input'); setResult(null); setAiError(null); setActiveSection('fortune'); };
+
+  // MBTI 유형카드 / 궁합 조합표 / 대운·세운 표에 쓰이는 파생 데이터
+  const mbtiInfo = result ? MBTI_DATA[result.formData.mbti] : null;
+  const dayBranchRelations = result ? getBranchRelations(result.sajuResult.dayPillar.branchIdx) : null;
+  const dayBranchAnimal = result ? EARTHLY_BRANCHES[result.sajuResult.dayPillar.branchIdx].animal : '';
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentAge = (() => {
+    if (!result) return 0;
+    const birthYearNum = parseInt(result.formData.birthYear);
+    const birthMonthNum = parseInt(result.formData.birthMonth);
+    const birthDayNum = parseInt(result.formData.birthDay);
+    let age = currentYear - birthYearNum;
+    const hasHadBirthdayThisYear =
+      today.getMonth() + 1 > birthMonthNum ||
+      (today.getMonth() + 1 === birthMonthNum && today.getDate() >= birthDayNum);
+    if (!hasHadBirthdayThisYear) age -= 1;
+    return age;
+  })();
+  const currentDaeunIdx = result
+    ? result.sajuResult.daeunList.reduce((acc, entry, idx) => (entry.age <= currentAge ? idx : acc), -1)
+    : -1;
+
+  // 오행 강함/부족 판정 (개인 맞춤 해설용)
+  const elementEntries = result ? Object.entries(result.sajuResult.elementCounts) : [];
+  const elementMaxCount = elementEntries.length ? Math.max(...elementEntries.map(([, c]) => c)) : 0;
+  const dominantElements = elementMaxCount > 0 ? elementEntries.filter(([, c]) => c === elementMaxCount).map(([el]) => el) : [];
+  const deficientElements = elementEntries.filter(([, c]) => c === 0).map(([el]) => el);
 
   // ── 렌더 ─────────────────────────────────────────
   return (
@@ -704,48 +595,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* API 키 입력 */}
-              <div className="api-key-section">
-                <div className="api-key-header">
-                  <span className="api-key-label">
-                    🔑 Google Gemini API 키 
-                    {((import.meta as any).env.VITE_GEMINI_API_KEY) && (
-                      <span style={{ color: '#34d399', fontSize: '11px', marginLeft: '8px', fontWeight: 'bold' }}>
-                        (✓ 내장 API 키 자동 적용됨)
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    style={{ padding: '5px 12px', fontSize: 11 }}
-                    onClick={() => setShowApiKey(v => !v)}
-                  >
-                    {showApiKey ? '숨기기' : '표시'}
-                  </button>
-                </div>
-                <input
-                  className="form-input"
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={e => handleApiKeySave(e.target.value)}
-                  placeholder={((import.meta as any).env.VITE_GEMINI_API_KEY) ? "내장된 API 키가 사용됩니다 (직접 입력 시 덮어쓰기)" : "AIza... (없으면 기본 해석만 제공됩니다)"}
-                />
-                <p className="api-key-hint">
-                  {((import.meta as any).env.VITE_GEMINI_API_KEY) ? (
-                    <span style={{ color: '#34d399' }}>현재 내장 API 키로 해석이 자동 실행됩니다. 다른 키를 쓰려면 입력해 주세요.</span>
-                  ) : (
-                    <>
-                      키가 없으면 사주 계산은 되지만 AI 해석이 생략됩니다.&nbsp;
-                      <a className="api-key-link" href="https://aistudio.google.com" target="_blank" rel="noreferrer">
-                        Google AI Studio
-                      </a>
-                      에서 무료로 발급받을 수 있어요!
-                    </>
-                  )}
-                </p>
-              </div>
-
               {/* 제출 버튼 */}
               <button type="submit" className="btn-primary">
                 <span>✨</span>
@@ -813,8 +662,9 @@ export default function App() {
                       className="btn-secondary"
                       style={{ padding: '10px 14px', fontSize: '13px' }}
                       onClick={handleDownloadPDF}
+                      disabled={pdfGenerating}
                     >
-                      📄 PDF 저장
+                      {pdfGenerating ? '⏳ PDF 생성 중...' : '📄 PDF 저장'}
                     </button>
                     <button
                       className="btn-secondary"
@@ -874,6 +724,54 @@ export default function App() {
               </div>
             </div>
 
+            {/* 결과 화면 섹션 탭 */}
+            <div className="tab-nav section-tab-nav">
+              {[
+                { id: 'fortune', label: '🌌 운세' },
+                { id: 'mbti', label: '🧠 MBTI카드' },
+                { id: 'ai', label: '🤖 AI해석' },
+                { id: 'compat', label: '💑 궁합' },
+                { id: 'fengshui', label: '🏡 풍수' },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`tab-btn ${activeSection === t.id ? 'active' : ''}`}
+                  onClick={() => setActiveSection(t.id as any)}
+                >
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* MBTI 유형카드 */}
+            {activeSection === 'mbti' && mbtiInfo && (
+              <div className="glass-card animate-slide-up-delay-1">
+                <div className="section-label" style={{ marginBottom: 4 }}>🧠 MBTI 유형카드</div>
+                <div className="section-title" style={{ marginBottom: 16 }}>
+                  {result.formData.mbti} · {mbtiInfo.nickname}
+                </div>
+                <div className="mbti-card">
+                  <div className="mbti-card-emoji">{mbtiInfo.emoji}</div>
+                  <div style={{ flex: 1 }}>
+                    <div className="mbti-card-tags">
+                      {mbtiInfo.keywords.map(k => <span key={k} className="compat-tag">#{k}</span>)}
+                    </div>
+                    <p className="mbti-card-trait">{mbtiInfo.coreTrait}</p>
+                    <p className="mbti-card-synergy">
+                      ⭐ 일간 <strong style={{ color: 'var(--gold)' }}>
+                        {result.sajuResult.dayStem}({ELEMENT_LABELS[result.sajuResult.dayStemElement].ko})
+                      </strong> 기운과 만나면, {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko}의 기질이 더해져 {mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 운세: 오행 분포 + 시주 정보 + 대운/세운 */}
+            {activeSection === 'fortune' && (
+            <div className="space-y-6 animate-fade-in">
+
             {/* 오행 분포 */}
             <div className="glass-card animate-slide-up-delay-2">
               <div className="section-label" style={{ marginBottom: 4 }}>🌿 오행 분포</div>
@@ -881,12 +779,16 @@ export default function App() {
               <div className="element-grid">
                 {Object.entries(result.sajuResult.elementCounts).map(([el, cnt]) => {
                   const info = ELEMENT_LABELS[el];
+                  const isDominant = dominantElements.includes(el);
+                  const isDeficient = cnt === 0;
                   return (
                     <div key={el} className={`element-card ${info.cls}`}>
                       <div className="element-icon">{info.emoji}</div>
                       <div className="element-name">{info.ko}</div>
                       <div className="element-count">{cnt}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>개</div>
+                      {isDominant && <div className="element-badge element-badge-strong">강함</div>}
+                      {isDeficient && <div className="element-badge element-badge-weak">부족</div>}
                     </div>
                   );
                 })}
@@ -894,6 +796,20 @@ export default function App() {
               <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, opacity: 0.8 }}>
                 ※ 천간(天干) 4자 + 지지(地支) 4자, 총 8글자의 오행 분포입니다.
               </div>
+              {(dominantElements.length > 0 || deficientElements.length > 0) && (
+                <div className="element-interpretation">
+                  {dominantElements.map(el => (
+                    <p key={`strong-${el}`} className="element-interpretation-text">
+                      ⭐ {ELEMENT_INTERPRETATIONS[el].strongDesc}
+                    </p>
+                  ))}
+                  {deficientElements.map(el => (
+                    <p key={`weak-${el}`} className="element-interpretation-text muted">
+                      💭 {ELEMENT_INTERPRETATIONS[el].weakDesc}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 시주 정보 */}
@@ -921,21 +837,123 @@ export default function App() {
               </div>
             </div>
 
+            {/* 대운/세운 표 */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="section-label" style={{ marginBottom: 4 }}>🌌 운의 흐름</div>
+              <div className="section-title" style={{ marginBottom: 16 }}>대운(大運) · 세운(歲運) 흐름표</div>
+
+              <div className="section-subtitle">
+                대운 · {result.sajuResult.daeunStartAge}세부터 10년 주기로 진행 (현재 만 {currentAge}세 기준 하이라이트)
+              </div>
+              <div className="daeun-scroll">
+                {result.sajuResult.daeunList.map((d, idx) => (
+                  <div key={d.age} className={`daeun-card ${idx === currentDaeunIdx ? 'current' : ''}`}>
+                    <div className="daeun-age">{d.age}세~</div>
+                    <div className="daeun-hanja">{d.stemHanja}{d.branchHanja}</div>
+                    <div className="daeun-kr">{d.stem}{d.branch}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="section-subtitle" style={{ marginTop: 24 }}>
+                세운 · {currentYear - 5}년 ~ {currentYear + 5}년 (올해 {currentYear}년 하이라이트)
+              </div>
+              <div className="daeun-scroll">
+                {result.sajuResult.seunList.map(s => (
+                  <div key={s.year} className={`daeun-card ${s.year === currentYear ? 'current' : ''}`}>
+                    <div className="daeun-age">{s.year}</div>
+                    <div className="daeun-hanja">{s.stemHanja}{s.branchHanja}</div>
+                    <div className="daeun-kr">{s.stem}{s.branch}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            </div>
+            )}
+
+            {/* 궁합 조합표 */}
+            {activeSection === 'compat' && dayBranchRelations && (
+              <div className="glass-card animate-slide-up-delay-2">
+                <div className="section-label" style={{ marginBottom: 4 }}>💑 궁합 가이드</div>
+                <div className="section-title" style={{ marginBottom: 12 }}>궁합 조합표 (일지 기준)</div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.7 }}>
+                  당신의 일지(日支)는{' '}
+                  <strong style={{ color: 'var(--gold)' }}>
+                    {result.sajuResult.dayPillar.branchHanja}({result.sajuResult.dayPillar.branch} · {dayBranchAnimal}띠)
+                  </strong>
+                  입니다. 상대방의 띠를 기준으로 한 궁합 경향은 아래와 같습니다.
+                </p>
+                <div className="compat-grid">
+                  <div className="compat-block compat-good">
+                    <div className="compat-block-title">
+                      💞 삼합 (베스트 궁합){dayBranchRelations.samhapElement ? ` · ${dayBranchRelations.samhapElement}국` : ''}
+                    </div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.samhapPartners.length > 0
+                        ? dayBranchRelations.samhapPartners.map(p => (
+                          <span key={p.branchIdx} className="compat-tag">{p.animal}띠 ({p.hanja})</span>
+                        ))
+                        : <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>해당 없음</span>}
+                    </div>
+                  </div>
+                  <div className="compat-block compat-good">
+                    <div className="compat-block-title">🤝 육합 (찰떡 궁합)</div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.yukhapPartner
+                        ? <span className="compat-tag">{dayBranchRelations.yukhapPartner.animal}띠 ({dayBranchRelations.yukhapPartner.hanja})</span>
+                        : <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>해당 없음</span>}
+                    </div>
+                  </div>
+                  <div className="compat-block compat-bad">
+                    <div className="compat-block-title">⚡ 충 (갈등 주의)</div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.chungPartner
+                        ? <span className="compat-tag bad">{dayBranchRelations.chungPartner.animal}띠 ({dayBranchRelations.chungPartner.hanja})</span>
+                        : <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>해당 없음</span>}
+                    </div>
+                  </div>
+                  <div className="compat-block compat-bad">
+                    <div className="compat-block-title">⚠️ 형 (스트레스 주의)</div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.hyeongPartners.map(p => (
+                        <span key={p.branchIdx} className="compat-tag bad">{p.animal}띠 ({p.hanja})</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="compat-block compat-bad">
+                    <div className="compat-block-title">💔 파 (틀어짐 주의)</div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.paPartner
+                        ? <span className="compat-tag bad">{dayBranchRelations.paPartner.animal}띠 ({dayBranchRelations.paPartner.hanja})</span>
+                        : <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>해당 없음</span>}
+                    </div>
+                  </div>
+                  <div className="compat-block compat-bad">
+                    <div className="compat-block-title">🥀 해 (은근한 마찰)</div>
+                    <div className="compat-tags">
+                      {dayBranchRelations.haePartner
+                        ? <span className="compat-tag bad">{dayBranchRelations.haePartner.animal}띠 ({dayBranchRelations.haePartner.hanja})</span>
+                        : <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>해당 없음</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* AI 해석 */}
+            {activeSection === 'ai' && (
             <div className="animate-slide-up-delay-3">
               <div className="section-label" style={{ marginBottom: 8 }}>🤖 Gemini AI 심층 해석</div>
               <div className="section-title" style={{ marginBottom: 16 }}>사주 × {result.formData.mbti} 융합 분석</div>
 
-              {/* AI 키 없음 */}
-              {!apiKey.trim() && !((import.meta as any).env.VITE_GEMINI_API_KEY as string) && !result.aiData && (
+              {/* AI 키 없음 (내장 키 미설정 상태) */}
+              {!GEMINI_API_KEY && !result.aiData && (
                 <div className="no-api-notice">
                   <div className="no-api-notice-icon">🔑</div>
-                  <div className="no-api-notice-title">Gemini API 키를 입력하면 AI 해석을 받을 수 있어요!</div>
+                  <div className="no-api-notice-title">현재 AI 해석 기능을 이용할 수 없어요</div>
                   <div className="no-api-notice-desc">
-                    입력 화면으로 돌아가서 API 키를 넣고 다시 분석해 주세요.<br />
-                    <a className="api-key-link" href="https://aistudio.google.com" target="_blank" rel="noreferrer">
-                      Google AI Studio
-                    </a>에서 무료로 발급받을 수 있습니다.
+                    사주 계산 결과는 정상적으로 제공되지만, AI 융합 해석은 잠시 후 다시 시도해 주세요.
                   </div>
                 </div>
               )}
@@ -1136,6 +1154,55 @@ export default function App() {
                 </div>
               )}
             </div>
+            )}
+
+            {/* 풍수 수리 가이드 */}
+            {activeSection === 'fengshui' && (
+            <div className="glass-card animate-slide-up-delay-4">
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div>
+                  <div className="section-label">🏡 풍수 인테리어</div>
+                  <div className="section-title">풍수 수리 가이드</div>
+                </div>
+                {fengShuiText && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('풍수 수리 가이드', `${result.formData.name}님의 풍수 가이드`, fengShuiText)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+
+              {fengShuiText ? (
+                <>
+                  <div className="deep-analysis-text">{fengShuiText}</div>
+                  <button
+                    className="btn-secondary"
+                    style={{ marginTop: 12, fontSize: 12 }}
+                    onClick={handleGenerateFengShui}
+                    disabled={fengShuiLoading}
+                  >
+                    {fengShuiLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
+                  </button>
+                </>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    사주 오행 분포를 바탕으로 나에게 맞는 행운의 색상 · 방위 · 인테리어 보완 팁을 AI가 만들어드려요.
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateFengShui} disabled={fengShuiLoading}>
+                    {fengShuiLoading ? (
+                      <span>✨ 풍수 가이드 생성 중...</span>
+                    ) : (
+                      <span>🏡 풍수 수리 가이드 생성하기</span>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+            )}
 
             {/* 다시 하기 버튼 */}
             <div style={{ paddingTop: 8 }}>
@@ -1181,6 +1248,165 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* PDF 저장용 숨겨진 6페이지 보고서 (html2pdf.js가 캡처하는 실제 DOM) */}
+      {result && (
+        <div ref={pdfRef} style={{ position: 'fixed', left: -10000, top: 0, width: 794, pointerEvents: 'none' }}>
+          {/* P1: 표지 / 사주원국 */}
+          <div className="pdf-page">
+            <div className="pdf-page-header">🌌 星命 사주 × MBTI 종합 보고서</div>
+            <div className="pdf-meta-grid">
+              <div><span className="pdf-meta-label">이름</span><span className="pdf-meta-value">{result.formData.name}</span></div>
+              <div><span className="pdf-meta-label">성별</span><span className="pdf-meta-value">{result.formData.gender === 'male' ? '남성' : '여성'}</span></div>
+              <div><span className="pdf-meta-label">MBTI</span><span className="pdf-meta-value">{result.formData.mbti}</span></div>
+              <div><span className="pdf-meta-label">생년월일</span><span className="pdf-meta-value">{result.formData.birthYear}.{result.formData.birthMonth}.{result.formData.birthDay}</span></div>
+              <div><span className="pdf-meta-label">태어난 시간</span><span className="pdf-meta-value">{result.hourBranch.name} ({result.hourBranch.time})</span></div>
+            </div>
+
+            <div className="pdf-section-title">사주원국 (四柱原局)</div>
+            <div className="pdf-pillar-grid">
+              {[
+                { label: '연주 (年柱)', pillar: result.sajuResult.yearPillar },
+                { label: '월주 (月柱)', pillar: result.sajuResult.monthPillar },
+                { label: '일주 (日柱)', pillar: result.sajuResult.dayPillar },
+                { label: '시주 (時柱)', pillar: result.sajuResult.hourPillar },
+              ].map(({ label, pillar }) => (
+                <div key={label} className="pdf-pillar-card">
+                  <div className="pdf-pillar-label">{label}</div>
+                  <div className="pdf-pillar-hanja">{pillar.hanjaText}</div>
+                  <div className="pdf-pillar-kr">{pillar.text}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pdf-section-title">오행(五行) 분포</div>
+            <div className="pdf-element-grid">
+              {Object.entries(result.sajuResult.elementCounts).map(([el, cnt]) => (
+                <div key={el} className="pdf-element-card">
+                  <div>{ELEMENT_LABELS[el].emoji} {ELEMENT_LABELS[el].ko}</div>
+                  <div className="pdf-element-count">{cnt}개</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* P2: MBTI 유형카드 */}
+          {mbtiInfo && (
+            <div className="pdf-page">
+              <div className="pdf-page-header">🧠 MBTI 유형카드</div>
+              <div className="pdf-card">
+                <div className="pdf-mbti-emoji">{mbtiInfo.emoji}</div>
+                <div className="pdf-mbti-title">{result.formData.mbti} · {mbtiInfo.nickname}</div>
+                <div className="pdf-tags">
+                  {mbtiInfo.keywords.map(k => <span key={k} className="pdf-tag">#{k}</span>)}
+                </div>
+                <p className="pdf-text">{mbtiInfo.coreTrait}</p>
+                <p className="pdf-text-muted">
+                  ⭐ 일간 {result.sajuResult.dayStem}({ELEMENT_LABELS[result.sajuResult.dayStemElement].ko}) 기운과 만나면, {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko}의 기질이 더해져 {mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* P3: AI 심층 분석 */}
+          <div className="pdf-page">
+            <div className="pdf-page-header">🤖 Gemini AI 심층 해석</div>
+            {result.aiData ? (
+              <>
+                <div className="pdf-card">
+                  <div className="pdf-ai-title">{result.aiData.title}</div>
+                  <p className="pdf-text-muted">{result.aiData.jungianNote}</p>
+                </div>
+                <div className="pdf-card">
+                  <div className="pdf-block-title">🧭 쉬운 사주원국 풀이</div>
+                  <p className="pdf-text">{result.aiData.sajuExplanation}</p>
+                </div>
+                {[
+                  { icon: '🌟', label: '성격 진단', data: result.aiData.personality },
+                  { icon: '💼', label: '커리어 & 재물', data: result.aiData.career },
+                  { icon: '💖', label: '연애 & 인간관계', data: result.aiData.romance },
+                  { icon: '💰', label: '재물 & 지출', data: result.aiData.wealth },
+                ].map(({ icon, label, data }) => (
+                  <div key={label} className="pdf-card">
+                    <div className="pdf-block-title">{icon} {label}</div>
+                    <p className="pdf-text">{data.analysis}</p>
+                    <div className="pdf-factbomb">🔥 {data.factBomb}</div>
+                    <div className="pdf-lucky">{data.luckyItem}</div>
+                  </div>
+                ))}
+                <div className="pdf-card">
+                  <div className="pdf-block-title">🎯 3대 실천 처방전</div>
+                  {result.aiData.prescriptions.map((p, i) => (
+                    <p key={i} className="pdf-text">{p}</p>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="pdf-card"><p className="pdf-text">AI 해석이 제공되지 않았습니다.</p></div>
+            )}
+          </div>
+
+          {/* P4: 대운/세운 표 */}
+          <div className="pdf-page">
+            <div className="pdf-page-header">🌌 대운(大運) · 세운(歲運) 흐름표</div>
+            <div className="pdf-block-title">대운 · {result.sajuResult.daeunStartAge}세부터 10년 주기 (현재 만 {currentAge}세)</div>
+            <table className="pdf-table">
+              <thead>
+                <tr>{result.sajuResult.daeunList.map((d, idx) => <th key={d.age} className={idx === currentDaeunIdx ? 'pdf-current' : ''}>{d.age}세~</th>)}</tr>
+              </thead>
+              <tbody>
+                <tr>{result.sajuResult.daeunList.map((d, idx) => <td key={d.age} className={idx === currentDaeunIdx ? 'pdf-current' : ''}>{d.stemHanja}{d.branchHanja}</td>)}</tr>
+              </tbody>
+            </table>
+            <div className="pdf-block-title" style={{ marginTop: 20 }}>세운 · {currentYear - 5}년 ~ {currentYear + 5}년</div>
+            <table className="pdf-table">
+              <thead>
+                <tr>{result.sajuResult.seunList.map(s => <th key={s.year} className={s.year === currentYear ? 'pdf-current' : ''}>{s.year}</th>)}</tr>
+              </thead>
+              <tbody>
+                <tr>{result.sajuResult.seunList.map(s => <td key={s.year} className={s.year === currentYear ? 'pdf-current' : ''}>{s.stemHanja}{s.branchHanja}</td>)}</tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* P5: 궁합 조합표 */}
+          {dayBranchRelations && (
+            <div className="pdf-page">
+              <div className="pdf-page-header">💑 궁합 조합표 (일지 기준)</div>
+              <p className="pdf-text">
+                당신의 일지(日支)는 {result.sajuResult.dayPillar.branchHanja}({result.sajuResult.dayPillar.branch} · {dayBranchAnimal}띠)입니다.
+              </p>
+              {[
+                { title: '💞 삼합 (베스트 궁합)', items: dayBranchRelations.samhapPartners },
+                { title: '🤝 육합 (찰떡 궁합)', items: dayBranchRelations.yukhapPartner ? [dayBranchRelations.yukhapPartner] : [] },
+                { title: '⚡ 충 (갈등 주의)', items: dayBranchRelations.chungPartner ? [dayBranchRelations.chungPartner] : [] },
+                { title: '⚠️ 형 (스트레스 주의)', items: dayBranchRelations.hyeongPartners },
+                { title: '💔 파 (틀어짐 주의)', items: dayBranchRelations.paPartner ? [dayBranchRelations.paPartner] : [] },
+                { title: '🥀 해 (은근한 마찰)', items: dayBranchRelations.haePartner ? [dayBranchRelations.haePartner] : [] },
+              ].map(({ title, items }) => (
+                <div key={title} className="pdf-card">
+                  <div className="pdf-block-title">{title}</div>
+                  <div className="pdf-tags">
+                    {items.length > 0
+                      ? items.map(p => <span key={p.branchIdx} className="pdf-tag">{p.animal}띠 ({p.hanja})</span>)
+                      : <span className="pdf-text-muted">해당 없음</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* P6: 풍수 수리 가이드 */}
+          <div className="pdf-page">
+            <div className="pdf-page-header">🏡 풍수 수리 가이드</div>
+            <div className="pdf-card">
+              <p className="pdf-text">
+                {fengShuiText || '풍수 수리 가이드가 생성되지 않았습니다. 결과 화면에서 먼저 생성해 주세요.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

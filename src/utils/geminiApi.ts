@@ -3,7 +3,7 @@
  * 사주 정보 + MBTI를 기반으로 AI 해석 생성
  */
 
-import { SajuResult } from './sajuCalculator';
+import { ElementCounts, SajuResult } from './sajuCalculator';
 
 // 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열 (2026년 최신 모델 기준)
 const MODELS = [
@@ -284,7 +284,7 @@ export async function generateFengShuiInterpretation(
   birthYear: string,
   birthMonth: string,
   birthDay: string,
-  elementCounts: Record<string, number>
+  elementCounts: ElementCounts
 ): Promise<string> {
   const elementKo: Record<string, string> = {
     wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)'
