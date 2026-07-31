@@ -122,7 +122,8 @@ export default function App() {
               resolve();
               return;
             }
-            if (existing.readyState === 'loaded' || existing.readyState === 'complete') {
+            const scriptReadyState = (existing as any).readyState;
+            if (scriptReadyState === 'loaded' || scriptReadyState === 'complete') {
               // 이미 로드된 상태지만 Kakao 객체가 아직 준비되지 않았다면 약간 대기
               setTimeout(() => {
                 if ((window as any).Kakao) resolve();
