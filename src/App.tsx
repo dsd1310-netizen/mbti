@@ -186,7 +186,7 @@ const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
   const [step, setStep] = useState<Step>('input');
-  const [activeSection, setActiveSection] = useState<'fortune' | 'mbti' | 'ai' | 'compat' | 'fengshui'>('fortune');
+  const [activeSection, setActiveSection] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -1826,7 +1826,6 @@ export default function App() {
             <div className="tab-nav section-tab-nav">
               {[
                 { id: 'fortune', label: '🌌 운세' },
-                { id: 'mbti', label: '🧠 MBTI카드' },
                 { id: 'ai', label: '🔮 나풀이 해석' },
                 { id: 'compat', label: '💑 궁합' },
                 { id: 'fengshui', label: '🏡 풍수' },
@@ -1841,30 +1840,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {/* MBTI 유형카드 */}
-            {activeSection === 'mbti' && mbtiInfo && (
-              <div className="glass-card animate-slide-up-delay-1">
-                <div className="section-label" style={{ marginBottom: 4 }}>🧠 MBTI 유형카드</div>
-                <div className="section-title" style={{ marginBottom: 16 }}>
-                  {result.formData.mbti} · {mbtiInfo.nickname}
-                </div>
-                <div className="mbti-card">
-                  <div className="mbti-card-emoji">{mbtiInfo.emoji}</div>
-                  <div style={{ flex: 1 }}>
-                    <div className="mbti-card-tags">
-                      {mbtiInfo.keywords.map(k => <span key={k} className="compat-tag">#{k}</span>)}
-                    </div>
-                    <p className="mbti-card-trait">{mbtiInfo.coreTrait}</p>
-                    <p className="mbti-card-synergy">
-                      ⭐ 일간 <strong style={{ color: 'var(--gold)' }}>
-                        {result.sajuResult.dayStem}({ELEMENT_LABELS[result.sajuResult.dayStemElement].ko})
-                      </strong> 기운과 만나면, {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko}의 기질이 더해져 {mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* 운세: 오행 분포 + 시주 정보 + 대운/세운 */}
             {activeSection === 'fortune' && (
@@ -2301,6 +2276,25 @@ export default function App() {
                     {(['personality', 'career', 'romance', 'wealth'] as AiCategoryKey[]).map(cat => (
                       activeTab === cat && (
                         <div key={cat} className="tab-pane animate-fade-in space-y-4">
+                          {cat === 'personality' && mbtiInfo && (
+                            <div className="mbti-card">
+                              <div className="mbti-card-emoji">{mbtiInfo.emoji}</div>
+                              <div style={{ flex: 1 }}>
+                                <div className="tab-pane-title" style={{ marginBottom: 6 }}>
+                                  {result.formData.mbti} · {mbtiInfo.nickname}
+                                </div>
+                                <div className="mbti-card-tags">
+                                  {mbtiInfo.keywords.map(k => <span key={k} className="compat-tag">#{k}</span>)}
+                                </div>
+                                <p className="mbti-card-trait">{mbtiInfo.coreTrait}</p>
+                                <p className="mbti-card-synergy">
+                                  ⭐ 일간 <strong style={{ color: 'var(--gold)' }}>
+                                    {result.sajuResult.dayStem}({ELEMENT_LABELS[result.sajuResult.dayStemElement].ko})
+                                  </strong> 기운과 만나면, {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko}의 기질이 더해져 {mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.
+                                </p>
+                              </div>
+                            </div>
+                          )}
                           {categoryData[cat] ? (
                             <>
                               <div className="flex items-center justify-between">
