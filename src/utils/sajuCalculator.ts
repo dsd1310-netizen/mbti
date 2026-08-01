@@ -147,7 +147,7 @@ function calcMonthPillar(year: number, month: number, day: number, hour: number,
  * 일주(日柱) 계산
  * 기준: 2000년 1월 1일 = 戊午일 (천간 4=무, 지지 6=오)
  */
-function calcDayPillar(year: number, month: number, day: number): Pillar {
+export function calcDayPillar(year: number, month: number, day: number): Pillar {
   const target = new Date(year, month - 1, day);
   const ref = new Date(2000, 0, 1);
   const diffDays = Math.round((target.getTime() - ref.getTime()) / 86400000);
@@ -194,7 +194,8 @@ export interface SajuResult {
   yearPillar: Pillar;
   monthPillar: Pillar;
   dayPillar: Pillar;
-  hourPillar: Pillar;
+  hourPillar: Pillar | null;
+  hourUnknown: boolean;
   elementCounts: ElementCounts;
   dayStem: string;
   dayBranch: string;
@@ -384,6 +385,7 @@ export function calculateSaju(
   day: number,
   hourBranchId: string,
   gender: string = 'female',
+  hourUnknown: boolean = false,
   exactHour: number = -1,
   exactMinute: number = 0
 ): SajuResult {
@@ -395,7 +397,8 @@ export function calculateSaju(
   let calcMinute = exactMinute;
 
   if (calcHour === -1) {
-    calcHour = hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1);
+    // 시간을 모르면 절기/대운 계산에 중립적인 정오(12시)를 기준값으로 사용
+    calcHour = hourUnknown ? 12 : (hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1));
     calcMinute = 0;
   }
 
@@ -415,16 +418,18 @@ export function calculateSaju(
   const yearPillar = calcYearPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute);
   const monthPillar = calcMonthPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute, yearPillar.stemIdx);
   const dayPillar = calcDayPillar(finalYear, finalMonth, finalDay);
-  const hourPillar = calcHourPillar(hourBranchIdx, dayPillar.stemIdx);
+  const hourPillar = hourUnknown ? null : calcHourPillar(hourBranchIdx, dayPillar.stemIdx);
 
-  const elementCounts = calcElementCounts([yearPillar, monthPillar, dayPillar, hourPillar]);
+  const elementCounts = calcElementCounts(
+    hourPillar ? [yearPillar, monthPillar, dayPillar, hourPillar] : [yearPillar, monthPillar, dayPillar]
+  );
 
-  // 대운/세운 산출
+  // 대운/세운 산출 (시간을 모르면 절기 대운수 계산은 정오 기준으로 근사)
   const { daeunStartAge, daeunList } = calculateDaeun(
     year,
     month,
     day,
-    calcHour === -1 ? 12 : calcHour,
+    hourUnknown ? 12 : (calcHour === -1 ? 12 : calcHour),
     calcMinute,
     gender,
     yearPillar,
@@ -438,6 +443,7 @@ export function calculateSaju(
     monthPillar,
     dayPillar,
     hourPillar,
+    hourUnknown,
     elementCounts,
     dayStem: dayPillar.stem,
     dayBranch: dayPillar.branch,

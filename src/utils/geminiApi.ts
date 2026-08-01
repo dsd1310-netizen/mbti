@@ -143,7 +143,7 @@ async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTok
     }
   }
 
-  throw lastError || new Error('현재 Gemini API 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+  throw lastError || new Error('현재 나풀이 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
 }
 
 // ─── 사주 인트로 (타이틀 + 쉬운 사주풀이) — 결과 화면 진입 시 자동 생성 ──────
@@ -170,7 +170,7 @@ export async function generateSajuIntro(
 - 연주(年柱): ${yearPillar.hanjaText}(${yearPillar.text})
 - 월주(月柱): ${monthPillar.hanjaText}(${monthPillar.text})
 - 일주(日柱): ${dayPillar.hanjaText}(${dayPillar.text}) ← 본인의 본질
-- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})
+${hourPillar ? `- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})` : '- 시주(時柱): 출생 시간을 몰라 미상 — 연·월·일주 3기둥만으로 풀이'}
 - 일간(日干): ${dayStem}(${ELEMENT_KO[dayStemElement]} 에너지)
 - 오행 분포: ${elementCountsStr(elementCounts)}
 
@@ -178,7 +178,7 @@ export async function generateSajuIntro(
 
 【 작성 지침 】
 1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
-2. sajuExplanation은 태어난 연/월/일/시주의 기운과 8글자 명식의 오행 형태를 자연경관이나 일상 사물(예: "눈 덮인 거대한 산속의 한 자루의 촛불")에 비유하여 초보자 눈높이에서 5~6줄로 친절하게 설명해 주세요.
+2. sajuExplanation은 ${hourPillar ? '태어난 연/월/일/시주의 기운과 8글자' : '태어난 연/월/일주 3기둥의 기운과 6글자(시주는 출생 시간 미상으로 제외)'} 명식의 오행 형태를 자연경관이나 일상 사물(예: "눈 덮인 거대한 산속의 한 자루의 촛불")에 비유하여 초보자 눈높이에서 5~6줄로 친절하게 설명해 주세요.${hourPillar ? '' : ' 시주가 없다는 사실을 어색하지 않게 자연스럽게 녹여 설명하세요.'}
 3. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록(\`\`\`json 등)은 절대 쓰지 마세요.
 
 {
@@ -401,6 +401,38 @@ export async function generateFortuneInterpretation(
     apiKey,
     prompt,
     '지금은 차근차근 내실을 다지며 다음 기회를 준비하는 흐름의 시기입니다. 올해는 새로운 인연과 기회에 마음을 열어두면 좋은 해입니다.'
+  );
+}
+
+/**
+ * 오늘의 나풀이 — 일주(본인 고유 간지)와 오늘 날짜의 일진 관계를 바탕으로 한 짧은 데일리 운세
+ */
+export async function generateDailyFortune(
+  apiKey: string,
+  name: string,
+  dayStem: string,
+  dayStemElement: string,
+  todayGanji: string,
+  todayHanja: string,
+  todayAnimal: string,
+): Promise<string> {
+  const prompt = `당신은 대한민국 최고 권위의 명리학 전문가이자 위트 있는 심리 칼럼니스트입니다.
+아래 사용자의 일간(본인 고유 기운)과 오늘 날짜의 일진(오늘의 간지)의 관계를 바탕으로, [오늘 하루의 짧은 운세 한마디]를 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 일간(본인의 기운): ${dayStem}(${ELEMENT_KO[dayStemElement]} 에너지)
+- 오늘의 일진: ${todayHanja}(${todayGanji}) · ${todayAnimal}띠 기운이 강한 날
+
+【 작성 지침 】
+1. 일간과 오늘 일진의 오행 관계(같은 기운/서로 돕는 기운/부딪히는 기운 등)를 짧게 짚어주되, 어려운 명리 용어 없이 일상적인 비유로 설명하세요.
+2. 오늘 하루 어떤 마음가짐이나 행동이 잘 맞을지 구체적인 팁 1개를 포함하세요.
+3. 존댓말로, 2~3문장(짧고 임팩트 있게)만 작성하세요. JSON이나 마크다운 없이 일반 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.'
   );
 }
 
