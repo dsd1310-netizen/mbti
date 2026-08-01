@@ -8,7 +8,7 @@ import {
   generatePrescriptions,
   generateFengShuiInterpretation,
   generateFortuneInterpretation,
-  generateDailyFortune,
+  generateDailyFortune, DailyFortune,
   generateElementSummaryInterpretation,
   generateCompatibilitySummaryInterpretation,
   generatePillarInterpretation,
@@ -228,7 +228,7 @@ export default function App() {
   const [elementSummaryLoading, setElementSummaryLoading] = useState(false);
   const [compatSummaryText, setCompatSummaryText] = useState<string | null>(null);
   const [compatSummaryLoading, setCompatSummaryLoading] = useState(false);
-  const [dailyFortuneText, setDailyFortuneText] = useState<string | null>(null);
+  const [dailyFortuneData, setDailyFortuneData] = useState<DailyFortune | null>(null);
   const [dailyFortuneLoading, setDailyFortuneLoading] = useState(false);
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -273,8 +273,10 @@ export default function App() {
 
   // 오늘의 나풀이(데일리 운세) 캐시 로드 (오늘 날짜 기준)
   useEffect(() => {
-    if (!result) { setDailyFortuneText(null); return; }
-    setDailyFortuneText(localStorage.getItem(dailyFortuneCacheKey(result.formData, todayDateStr())));
+    if (!result) { setDailyFortuneData(null); return; }
+    const cached = localStorage.getItem(dailyFortuneCacheKey(result.formData, todayDateStr()));
+    if (cached) { try { setDailyFortuneData(JSON.parse(cached)); } catch { setDailyFortuneData(null); } }
+    else { setDailyFortuneData(null); }
   }, [result]);
 
   // 사주 4기둥 AI 심층 해설 캐시 로드
@@ -467,8 +469,8 @@ export default function App() {
     }
   };
 
-  // 오늘의 나풀이(데일리 운세) 생성 — 일주와 오늘 일진의 관계를 바탕으로 한 짧은 오늘의 한마디
-  const handleGenerateDailyFortune = async (): Promise<string | null> => {
+  // 오늘의 나풀이(데일리 운세) 생성 — 일주와 오늘 일진의 관계를 바탕으로 한 짧은 오늘의 한마디 + 팩폭 한줄
+  const handleGenerateDailyFortune = async (): Promise<DailyFortune | null> => {
     if (!result) return null;
     if (!GEMINI_API_KEY) {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
@@ -479,7 +481,7 @@ export default function App() {
       const today = new Date();
       const todayPillar = calcDayPillar(today.getFullYear(), today.getMonth() + 1, today.getDate());
       const todayAnimal = EARTHLY_BRANCHES[todayPillar.branchIdx].animal;
-      const text = await generateDailyFortune(
+      const data = await generateDailyFortune(
         GEMINI_API_KEY,
         result.formData.name,
         result.sajuResult.dayStem,
@@ -488,11 +490,11 @@ export default function App() {
         todayPillar.hanjaText,
         todayAnimal,
       );
-      setDailyFortuneText(text);
+      setDailyFortuneData(data);
       const dateStr = todayDateStr();
-      localStorage.setItem(dailyFortuneCacheKey(result.formData, dateStr), text);
-      addBookmark('오늘의 나풀이', `${dateStr} 오늘의 나풀이`, text);
-      return text;
+      localStorage.setItem(dailyFortuneCacheKey(result.formData, dateStr), JSON.stringify(data));
+      addBookmark('오늘의 나풀이', `${dateStr} 오늘의 나풀이`, `${data.analysis}\n\n${data.factBomb}`);
+      return data;
     } catch (err: any) {
       showToast(`오늘의 나풀이 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
       return null;
@@ -1875,20 +1877,26 @@ export default function App() {
                   <div className="section-label">🌅 오늘의 나풀이</div>
                   <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()}</div>
                 </div>
-                {dailyFortuneText && (
+                {dailyFortuneData && (
                   <button
                     className="btn-secondary"
                     style={{ padding: '6px 12px', fontSize: 11 }}
-                    onClick={() => addBookmark('오늘의 나풀이', `${todayDateStr()} 오늘의 나풀이`, dailyFortuneText)}
+                    onClick={() => addBookmark('오늘의 나풀이', `${todayDateStr()} 오늘의 나풀이`, `${dailyFortuneData.analysis}\n\n${dailyFortuneData.factBomb}`)}
                   >
                     🔖 저장
                   </button>
                 )}
               </div>
-              {dailyFortuneText ? (
-                <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
-                  {dailyFortuneText}
-                </p>
+              {dailyFortuneData ? (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
+                    {dailyFortuneData.analysis}
+                  </p>
+                  <div className="fact-bomb-box">
+                    <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
+                    <div className="fact-bomb-content">{dailyFortuneData.factBomb}</div>
+                  </div>
+                </>
               ) : (
                 <div>
                   <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>

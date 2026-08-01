@@ -407,6 +407,11 @@ export async function generateFortuneInterpretation(
 /**
  * 오늘의 나풀이 — 일주(본인 고유 간지)와 오늘 날짜의 일진 관계를 바탕으로 한 짧은 데일리 운세
  */
+export interface DailyFortune {
+  analysis: string; // 오늘의 기운 설명 + 행동 팁 (2~3문장)
+  factBomb: string; // 🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄
+}
+
 export async function generateDailyFortune(
   apiKey: string,
   name: string,
@@ -415,9 +420,9 @@ export async function generateDailyFortune(
   todayGanji: string,
   todayHanja: string,
   todayAnimal: string,
-): Promise<string> {
-  const prompt = `당신은 대한민국 최고 권위의 명리학 전문가이자 위트 있는 심리 칼럼니스트입니다.
-아래 사용자의 일간(본인 고유 기운)과 오늘 날짜의 일진(오늘의 간지)의 관계를 바탕으로, [오늘 하루의 짧은 운세 한마디]를 작성해 주세요.
+): Promise<DailyFortune> {
+  const prompt = `당신은 대한민국 최고 권위의 명리학 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
+아래 사용자의 일간(본인 고유 기운)과 오늘 날짜의 일진(오늘의 간지)의 관계를 바탕으로, [오늘 하루 운세]를 작성해 주세요.
 
 【 사용자 정보 】
 - 이름: ${name}
@@ -425,15 +430,22 @@ export async function generateDailyFortune(
 - 오늘의 일진: ${todayHanja}(${todayGanji}) · ${todayAnimal}띠 기운이 강한 날
 
 【 작성 지침 】
-1. 일간과 오늘 일진의 오행 관계(같은 기운/서로 돕는 기운/부딪히는 기운 등)를 짧게 짚어주되, 어려운 명리 용어 없이 일상적인 비유로 설명하세요.
-2. 오늘 하루 어떤 마음가짐이나 행동이 잘 맞을지 구체적인 팁 1개를 포함하세요.
-3. 존댓말로, 2~3문장(짧고 임팩트 있게)만 작성하세요. JSON이나 마크다운 없이 일반 텍스트로 바로 출력하세요.`;
+1. analysis: 일간과 오늘 일진의 오행 관계(같은 기운/서로 돕는 기운/부딪히는 기운 등)를 어려운 명리 용어 없이 일상적인 비유로 짧게 짚고, 오늘 하루 어떤 마음가짐이나 행동이 잘 맞을지 구체적인 팁 1개를 포함해 존댓말로 2~3문장 작성하세요.
+2. factBomb: "오늘 당신은 분명 ○○할 겁니다" 식으로, 오늘의 기운을 고려했을 때 이 사람이 실제로 할 법한 행동이나 반응을 위트 있게 콕 찌르는 팩폭 한 줄(존댓말 매운맛, 반전 유머). 예: "오늘 그렇게 차분한 척 하셔도, 속으로는 이미 세 가지 딴생각을 하고 계실 걸요!"
+3. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
 
-  return callGeminiPlainApi(
-    apiKey,
-    prompt,
-    '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.'
-  );
+{
+  "analysis": "오늘의 기운 설명 + 행동 팁 (2~3문장)",
+  "factBomb": "🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄"
+}`;
+
+  const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 1024);
+  return {
+    analysis: parsed?.analysis?.trim()
+      || '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.',
+    factBomb: parsed?.factBomb?.trim()
+      || '🔥 오늘도 계획은 완벽하게 세워놓고 실행은 내일로 미루실 것 같은 예감이 드네요!',
+  };
 }
 
 /**
