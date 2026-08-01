@@ -104,6 +104,24 @@ function isQuestionableCategory(cat: AiCategoryKey): cat is QuestionableCategory
   return cat === 'career' || cat === 'romance' || cat === 'wealth';
 }
 
+// 캔버스에 텍스트를 최대 너비 기준으로 줄바꿈 (공백 단위 우선, 안 되면 글자 단위)
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
 type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string };
 
 function fengShuiCacheKey(f: CacheKeyBase): string {
@@ -177,6 +195,7 @@ export default function App() {
   const [compatSummaryLoading, setCompatSummaryLoading] = useState(false);
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [imageCardGenerating, setImageCardGenerating] = useState(false);
 
   useEffect(() => {
     const savedBm = localStorage.getItem('saju_bookmarks');
@@ -553,6 +572,112 @@ export default function App() {
     } catch (err: any) {
       console.error('Kakao Share error:', err);
       showToast(`카카오 공유 오류: ${err?.message ?? '알 수 없는 오류'}. 카카오 앱 도메인 등록을 확인해주세요.`);
+    }
+  };
+
+  // 인스타 스토리용 세로형(9:16) 결과 이미지 카드 생성 + 다운로드/공유
+  const handleDownloadImageCard = async () => {
+    if (!result) return;
+
+    let personality = categoryData.personality;
+    if (!personality) {
+      showToast('이미지 카드용 팩폭 문구를 생성하는 중...');
+      personality = await handleGenerateCategory('personality') ?? undefined;
+    }
+    if (!personality) {
+      showToast('이미지 카드 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+
+    setImageCardGenerating(true);
+    try {
+      const W = 1080;
+      const H = 1920;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('캔버스를 생성할 수 없습니다.');
+
+      // 배경 그라데이션
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+      bgGrad.addColorStop(0, '#1a0b2e');
+      bgGrad.addColorStop(0.55, '#0f0620');
+      bgGrad.addColorStop(1, '#050510');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      // 은은한 별 장식
+      ctx.save();
+      for (let i = 0; i < 60; i++) {
+        ctx.globalAlpha = Math.random() * 0.5 + 0.1;
+        ctx.fillStyle = '#f5c842';
+        ctx.beginPath();
+        ctx.arc(Math.random() * W, Math.random() * H * 0.65, Math.random() * 2 + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      ctx.textAlign = 'center';
+      const fontStack = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+
+      // 상단 워터마크
+      ctx.fillStyle = 'rgba(245, 200, 66, 0.85)';
+      ctx.font = `600 32px ${fontStack}`;
+      ctx.fillText('🔮 사주 × MBTI 분석', W / 2, 170);
+
+      // 이름 + MBTI
+      ctx.fillStyle = '#f0eeff';
+      ctx.font = `800 66px ${fontStack}`;
+      ctx.fillText(`${result.formData.name} · ${result.formData.mbti}`, W / 2, 290);
+
+      // 일주(日柱) 한자 — 사주 정체성 대표 표기
+      ctx.fillStyle = '#f5c842';
+      ctx.font = `900 220px "Noto Serif KR", serif`;
+      ctx.fillText(result.sajuResult.dayPillar.hanjaText, W / 2, 640);
+      ctx.fillStyle = 'rgba(240, 238, 255, 0.6)';
+      ctx.font = `400 30px ${fontStack}`;
+      ctx.fillText(`일주(日柱) · ${result.sajuResult.dayPillar.text}`, W / 2, 700);
+
+      // 팩폭 한줄평
+      ctx.fillStyle = '#f0eeff';
+      ctx.font = `600 46px ${fontStack}`;
+      const lines = wrapCanvasText(ctx, personality.factBomb, W - 160);
+      let y = 980;
+      lines.forEach(line => {
+        ctx.fillText(line, W / 2, y);
+        y += 64;
+      });
+
+      // 하단 브랜딩
+      ctx.fillStyle = 'rgba(240, 238, 255, 0.4)';
+      ctx.font = `400 26px ${fontStack}`;
+      ctx.fillText('mbti-delta-red.vercel.app', W / 2, H - 100);
+
+      const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('이미지 생성에 실패했습니다.');
+
+      const fileName = `${result.formData.name}_사주카드.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      const nav = navigator as any;
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: '사주 × MBTI 카드' });
+          return;
+        } catch {
+          // 공유 취소/실패 시 다운로드로 대체
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      showToast(`이미지 카드 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setImageCardGenerating(false);
     }
   };
 
@@ -1385,6 +1510,14 @@ export default function App() {
                       onClick={handleKakaoShare}
                     >
                       💬 카톡 공유
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '10px 14px', fontSize: '13px' }}
+                      onClick={handleDownloadImageCard}
+                      disabled={imageCardGenerating}
+                    >
+                      {imageCardGenerating ? '⏳ 카드 생성 중...' : '📸 이미지 카드 저장'}
                     </button>
                   </>
                 )}
