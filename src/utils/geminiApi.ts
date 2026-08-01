@@ -238,6 +238,11 @@ const CATEGORY_META: Record<AiCategoryKey, { label: string; focus: string; fallb
   },
 };
 
+export interface CategoryUserAnswer {
+  question: string;
+  answer: string;
+}
+
 export async function generateCategoryInterpretation(
   apiKey: string,
   name: string,
@@ -245,9 +250,17 @@ export async function generateCategoryInterpretation(
   mbti: string,
   sajuResult: SajuResult,
   category: AiCategoryKey,
+  userAnswers?: CategoryUserAnswer[],
 ): Promise<CategoryInterpretation> {
   const genderText = gender === 'male' ? '남성' : '여성';
   const meta = CATEGORY_META[category];
+
+  const answersBlock = userAnswers && userAnswers.length > 0
+    ? `\n\n【 ${name} 님의 실제 답변 】\n${userAnswers.map(a => `- ${a.question} → ${a.answer}`).join('\n')}`
+    : '';
+  const answersInstruction = userAnswers && userAnswers.length > 0
+    ? `\n5. 위 "실제 답변" 내용을 분석 안에서 반드시 직접 언급하며 이야기를 풀어가세요. (예: "지금 ○○ 상황이라고 하셨는데, 사주 상으로는...") 답변과 사주/MBTI 정보를 연결지어, 일반론이 아니라 이 사람만을 위한 맞춤 해석처럼 느껴지게 작성하세요.`
+    : '';
 
   const prompt = `당신은 대한민국 최고 권위의 명리학(사주팔자) 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
 아래 사주 및 MBTI 정보를 가지고 ${name}(${genderText}) 님의 [${meta.label}]에 대해 위트 있는 팩폭 분석을 작성해 주세요.
@@ -258,13 +271,13 @@ export async function generateCategoryInterpretation(
 - 일주(日柱): ${sajuResult.dayPillar.hanjaText}(${sajuResult.dayPillar.text})
 - 오행 분포: ${elementCountsStr(sajuResult.elementCounts)}
 
-【 MBTI 】: ${mbti}
+【 MBTI 】: ${mbti}${answersBlock}
 
 【 작성 지침 】
 1. 어려운 사주 한자 용어 대신 "용광로", "큰 나무", "스펀지", "폭풍" 등 비전공자도 이해하기 쉬운 비유를 사용하세요.
 2. 톤앤매너: 예의를 갖추되 정곡을 찌르는 존댓말 팩폭("~해요", "~입니다") 사용.
 3. ${meta.focus} 5~7줄 이상의 풍부한 심층 분석으로 작성하세요.
-4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.${answersInstruction}
 
 {
   "analysis": "${meta.label} 심층 분석 (쉬운 비유 사용, 5~7줄)",

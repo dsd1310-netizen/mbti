@@ -4,7 +4,7 @@ import heroImage from './assets/hero.png';
 import { calculateSaju, HOUR_BRANCHES, EARTHLY_BRANCHES, Pillar, SajuResult } from './utils/sajuCalculator';
 import {
   generateSajuIntro, SajuIntro,
-  generateCategoryInterpretation, AiCategoryKey, CategoryInterpretation,
+  generateCategoryInterpretation, AiCategoryKey, CategoryInterpretation, CategoryUserAnswer,
   generatePrescriptions,
   generateFengShuiInterpretation,
   generateFortuneInterpretation,
@@ -15,6 +15,7 @@ import {
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
+import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 
 // ─── 타입 ────────────────────────────────────────
 interface FormData {
@@ -99,6 +100,10 @@ const CATEGORY_TAB_META: Record<AiCategoryKey, {
   },
 };
 
+function isQuestionableCategory(cat: AiCategoryKey): cat is QuestionableCategory {
+  return cat === 'career' || cat === 'romance' || cat === 'wealth';
+}
+
 type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string };
 
 function fengShuiCacheKey(f: CacheKeyBase): string {
@@ -107,8 +112,9 @@ function fengShuiCacheKey(f: CacheKeyBase): string {
 function unseCacheKey(f: CacheKeyBase, year: number): string {
   return `saju_unse_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${year}`;
 }
-function categoryCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey): string {
-  return `saju_category_${category}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}`;
+function categoryCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
+  const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
+  return `saju_category_${category}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}${answerSuffix}`;
 }
 function prescriptionsCacheKey(f: CacheKeyBase, mbti: string): string {
   return `saju_prescriptions_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}`;
@@ -152,6 +158,9 @@ export default function App() {
   const [categoryLoading, setCategoryLoading] = useState<Partial<Record<AiCategoryKey, boolean>>>({});
   const [prescriptionsData, setPrescriptionsData] = useState<string[] | null>(null);
   const [prescriptionsLoading, setPrescriptionsLoading] = useState(false);
+
+  // 커리어/연애/재물 생성 전 개인화 질문 답변 (선택 사항, [질문1 답, 질문2 답])
+  const [categoryAnswers, setCategoryAnswers] = useState<Partial<Record<QuestionableCategory, [string?, string?]>>>({});
 
   // 사주 4기둥 클릭 시 AI 심층 해설
   const [pillarModal, setPillarModal] = useState<{ key: PillarKey; label: string; hanjaText: string; koreanText: string; staticDesc?: string } | null>(null);
@@ -223,7 +232,8 @@ export default function App() {
   };
 
   // 카테고리(성격/커리어/연애/재물) AI 심층 분석 생성
-  const handleGenerateCategory = async (category: AiCategoryKey): Promise<CategoryInterpretation | null> => {
+  // answers: 커리어/연애/재물에 한해 사용자가 개인화 질문에 답했다면 전달 (건너뛰면 undefined)
+  const handleGenerateCategory = async (category: AiCategoryKey, answers?: CategoryUserAnswer[]): Promise<CategoryInterpretation | null> => {
     if (!result) return null;
     if (!GEMINI_API_KEY) {
       showToast('AI 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
@@ -238,9 +248,10 @@ export default function App() {
         result.formData.mbti,
         result.sajuResult,
         category,
+        answers,
       );
       setCategoryData(prev => ({ ...prev, [category]: data }));
-      localStorage.setItem(categoryCacheKey(result.formData, result.formData.mbti, category), JSON.stringify(data));
+      localStorage.setItem(categoryCacheKey(result.formData, result.formData.mbti, category, answers), JSON.stringify(data));
       return data;
     } catch (err: any) {
       showToast(`${CATEGORY_TAB_META[category].bookmarkCategory} 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1015,6 +1026,7 @@ export default function App() {
     setIntroError(null);
     setActiveSection('fortune');
     setActiveTab('personality');
+    setCategoryAnswers({});
   };
 
   // MBTI 유형카드 / 궁합 조합표 / 대운·세운 표에 쓰이는 파생 데이터
@@ -1904,9 +1916,57 @@ export default function App() {
                               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
                                 {CATEGORY_TAB_META[cat].introText}
                               </p>
+
+                              {isQuestionableCategory(cat) && (
+                                <div style={{ marginBottom: 16 }}>
+                                  <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                                    💬 답변하면 AI가 내 상황에 맞춰 더 구체적으로 해석해줘요 (선택 사항, 안 골라도 돼요)
+                                  </p>
+                                  {CATEGORY_QUESTIONS[cat].map((q, qIdx) => (
+                                    <div key={qIdx} style={{ marginBottom: 14 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+                                        {q.question}
+                                      </div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {q.options.map(opt => {
+                                          const selected = categoryAnswers[cat]?.[qIdx] === opt.value;
+                                          return (
+                                            <button
+                                              key={opt.value}
+                                              type="button"
+                                              className={`hour-btn ${selected ? 'selected' : ''}`}
+                                              style={{ padding: '8px 12px', fontSize: 12, flex: 'none' }}
+                                              onClick={() => setCategoryAnswers(prev => {
+                                                const cur: [string?, string?] = prev[cat] ?? [undefined, undefined];
+                                                const next: [string?, string?] = [cur[0], cur[1]];
+                                                next[qIdx] = selected ? undefined : opt.value;
+                                                return { ...prev, [cat]: next };
+                                              })}
+                                            >
+                                              {opt.label}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
                               <button
                                 className="btn-primary"
-                                onClick={() => handleGenerateCategory(cat)}
+                                onClick={() => {
+                                  if (isQuestionableCategory(cat)) {
+                                    const qs = CATEGORY_QUESTIONS[cat];
+                                    const ans = categoryAnswers[cat] ?? [undefined, undefined];
+                                    const answered: CategoryUserAnswer[] = qs
+                                      .map((q, qIdx) => ({ question: q.question, answer: ans[qIdx] }))
+                                      .filter((a): a is CategoryUserAnswer => !!a.answer);
+                                    handleGenerateCategory(cat, answered.length > 0 ? answered : undefined);
+                                  } else {
+                                    handleGenerateCategory(cat);
+                                  }
+                                }}
                                 disabled={!!categoryLoading[cat]}
                               >
                                 {categoryLoading[cat] ? <span>✨ 생성 중...</span> : <span>{CATEGORY_TAB_META[cat].generateLabel}</span>}
