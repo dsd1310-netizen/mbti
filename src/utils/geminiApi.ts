@@ -84,8 +84,14 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * JSON 응답을 기대하는 Gemini API 호출 공통 함수 (모델 폴백 + 재시도 + 타임아웃)
  */
-async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTokens: number): Promise<Partial<T> | null> {
+async function callGeminiJsonApi<T>(
+  apiKey: string,
+  prompt: string,
+  maxOutputTokens: number,
+  timeoutMs: number = 20000,
+): Promise<Partial<T> | null> {
   let lastError: Error | null = null;
+  let hadSuccessfulResponse = false;
   const maxRetries = 3;
 
   for (const model of MODELS) {
@@ -93,7 +99,7 @@ async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTok
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         if (attempt > 1) {
@@ -130,11 +136,20 @@ async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTok
           throw new Error(msg);
         }
 
+        hadSuccessfulResponse = true;
         const data = await response.json();
         const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
           ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
-        return extractJsonObject<T>(rawText);
+        const parsed = extractJsonObject<T>(rawText);
+        if (parsed !== null) {
+          return parsed;
+        }
+
+        // 응답은 정상 수신했지만 JSON 파싱에 실패 (사고형 모델의 토큰 소진 등) — 네트워크 오류와 동일하게 재시도
+        const finishReason = (data as { candidates?: { finishReason?: string }[] })?.candidates?.[0]?.finishReason;
+        console.warn(`[GeminiAPI] ${model} 응답 JSON 파싱 실패 (finishReason: ${finishReason ?? '알 수 없음'}). ${attempt}/${maxRetries}회 재시도...`);
+        lastError = new Error('AI 응답을 올바른 형식으로 해석하지 못했습니다.');
       } catch (err: any) {
         clearTimeout(timeoutId);
         lastError = err;
@@ -145,6 +160,11 @@ async function callGeminiJsonApi<T>(apiKey: string, prompt: string, maxOutputTok
     }
   }
 
+  if (hadSuccessfulResponse) {
+    // 모든 모델/재시도에서 응답은 왔지만 끝내 파싱 가능한 JSON을 얻지 못함 — 호출부의 폴백 콘텐츠 사용
+    console.warn('[GeminiAPI] 모든 모델에서 JSON 파싱 실패, 폴백 콘텐츠로 대체합니다:', lastError?.message);
+    return null;
+  }
   throw lastError || new Error('현재 나풀이 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
 }
 
@@ -189,7 +209,7 @@ ${hourPillar ? `- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})` :
   "sajuExplanation": "사주원국 8글자와 각 기둥의 기운을 초보자 눈높이에서 쉽고 흥미진진하게 설명한 종합 해설 (자연 비유 포함, 5~6줄)"
 }`;
 
-  const parsed = await callGeminiJsonApi<SajuIntro>(apiKey, prompt, 2048);
+  const parsed = await callGeminiJsonApi<SajuIntro>(apiKey, prompt, 8192, 45000);
   return {
     title: parsed?.title?.trim() || `${mbti} × 사주 심층 융합 분석`,
     jungianNote: parsed?.jungianNote?.trim()
@@ -287,7 +307,7 @@ export async function generateCategoryInterpretation(
   "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
 }`;
 
-  const parsed = await callGeminiJsonApi<CategoryInterpretation>(apiKey, prompt, 2048);
+  const parsed = await callGeminiJsonApi<CategoryInterpretation>(apiKey, prompt, 8192, 45000);
   return {
     analysis: parsed?.analysis?.trim() || meta.fallback.analysis,
     factBomb: parsed?.factBomb?.trim() || meta.fallback.factBomb,
@@ -327,7 +347,7 @@ export async function generatePrescriptions(
   ]
 }`;
 
-  const parsed = await callGeminiJsonApi<{ prescriptions: string[] }>(apiKey, prompt, 1024);
+  const parsed = await callGeminiJsonApi<{ prescriptions: string[] }>(apiKey, prompt, 8192, 45000);
   if (Array.isArray(parsed?.prescriptions) && parsed.prescriptions.length >= 3) {
     return parsed.prescriptions;
   }
@@ -441,7 +461,7 @@ export async function generateDailyFortune(
   "factBomb": "🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄"
 }`;
 
-  const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 1024);
+  const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 8192, 45000);
   return {
     analysis: parsed?.analysis?.trim()
       || '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.',

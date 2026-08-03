@@ -135,6 +135,23 @@ function isQuestionableCategory(cat: AiCategoryKey): cat is QuestionableCategory
   return cat === 'career' || cat === 'romance' || cat === 'wealth';
 }
 
+// HTML 문자열 삽입 지점(PDF document.write 등)에 쓰이는 이스케이프 헬퍼.
+// 이름 등 사용자 입력값, AI 생성 텍스트, (다이어리 불러오기로 주입 가능한) 캐시된 문자열은
+// 전부 신뢰할 수 없는 입력으로 간주해 반드시 이 함수를 거쳐야 함.
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// 이스케이프 후 줄바꿈을 <br>로 변환 (AI 텍스트를 <p> 안에 그대로 넣을 때 사용)
+function escapeHtmlBreaks(str: string): string {
+  return escapeHtml(str).replace(/\n/g, '<br>');
+}
+
 // 캔버스에 텍스트를 최대 너비 기준으로 줄바꿈 (공백 단위 우선, 안 되면 글자 단위)
 function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(' ');
@@ -1090,21 +1107,21 @@ export default function App() {
         ];
         aiContentHtml = `
           <div class="report-section">
-            <h2>🔮 나풀이 융합 분석: ${intro.title}</h2>
-            <p class="lead-note"><em>${intro.jungianNote}</em></p>
+            <h2>🔮 나풀이 융합 분석: ${escapeHtml(intro.title)}</h2>
+            <p class="lead-note"><em>${escapeHtml(intro.jungianNote)}</em></p>
 
             <div class="report-block">
               <h3>🧭 쉬운 사주원국 해설</h3>
-              <p>${intro.sajuExplanation}</p>
+              <p>${escapeHtml(intro.sajuExplanation)}</p>
             </div>
 
             ${categoryBlocks.map(b => b.data ? `
               <div class="report-block">
                 <h3>${b.icon} ${b.title}</h3>
-                <p>${b.data.analysis}</p>
-                <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${b.data.factBomb}</p>
-                <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${b.data.luckyItem}</p>
-                ${b.deepData ? `<h3>🔍 심화해석</h3><p>${b.deepData.replace(/\n/g, '<br>')}</p>` : ''}
+                <p>${escapeHtml(b.data.analysis)}</p>
+                <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${escapeHtml(b.data.factBomb)}</p>
+                <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${escapeHtml(b.data.luckyItem)}</p>
+                ${b.deepData ? `<h3>🔍 심화해석</h3><p>${escapeHtmlBreaks(b.deepData)}</p>` : ''}
               </div>
             ` : '').join('')}
 
@@ -1112,7 +1129,7 @@ export default function App() {
               <div class="report-block">
                 <h3>🎯 3대 실천 처방전</h3>
                 <ul>
-                  ${prescriptionsForPdf.map(p => `<li>${p}</li>`).join('')}
+                  ${prescriptionsForPdf.map(p => `<li>${escapeHtml(p)}</li>`).join('')}
                 </ul>
               </div>
             ` : ''}
@@ -1126,7 +1143,7 @@ export default function App() {
           <div class="report-section">
             <h2>🧠 MBTI 유형카드</h2>
             <div class="report-block">
-              <h3>${mbtiInfo.emoji} ${result.formData.mbti} · ${mbtiInfo.nickname}</h3>
+              <h3>${mbtiInfo.emoji} ${escapeHtml(result.formData.mbti)} · ${mbtiInfo.nickname}</h3>
               <p>${mbtiInfo.coreTrait}</p>
               <p class="lucky-item">⭐ 일간(${saju.dayStem}) 기운과 만나면 ${ELEMENT_LABELS[saju.dayStemElement].ko}의 기질이 더해져 ${mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.</p>
             </div>
@@ -1171,8 +1188,8 @@ export default function App() {
               <p>💔 파(틀어짐 주의): ${dayBranchRelations.paPartner ? `${dayBranchRelations.paPartner.animal}띠(${dayBranchRelations.paPartner.hanja})` : '해당 없음'}</p>
               <p>🥀 해(은근한 마찰): ${dayBranchRelations.haePartner ? `${dayBranchRelations.haePartner.animal}띠(${dayBranchRelations.haePartner.hanja})` : '해당 없음'}</p>
             </div>
-            ${compatSummaryForPdf ? `<div class="report-block"><h3>💬 궁합 종합 해설</h3><p>${compatSummaryForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
-            ${compatSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 궁합 종합 심화해설</h3><p>${compatSummaryDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
+            ${compatSummaryForPdf ? `<div class="report-block"><h3>💬 궁합 종합 해설</h3><p>${escapeHtmlBreaks(compatSummaryForPdf)}</p></div>` : ''}
+            ${compatSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 궁합 종합 심화해설</h3><p>${escapeHtmlBreaks(compatSummaryDeepForPdf)}</p></div>` : ''}
           </div>
         `;
       }
@@ -1181,8 +1198,8 @@ export default function App() {
         ? `
           <div class="report-section">
             <h2>🌿 오행 종합 해설</h2>
-            <div class="report-block"><p>${elementSummaryForPdf.replace(/\n/g, '<br>')}</p></div>
-            ${elementSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${elementSummaryDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
+            <div class="report-block"><p>${escapeHtmlBreaks(elementSummaryForPdf)}</p></div>
+            ${elementSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${escapeHtmlBreaks(elementSummaryDeepForPdf)}</p></div>` : ''}
           </div>
         `
         : '';
@@ -1194,7 +1211,7 @@ export default function App() {
             ${pillarDefs.map(def => pillarAiForPdf[def.key] ? `
               <div class="report-block">
                 <h3>${def.label} · ${def.pillar.hanjaText}(${def.pillar.text})</h3>
-                <p>${pillarAiForPdf[def.key]}</p>
+                <p>${escapeHtmlBreaks(pillarAiForPdf[def.key]!)}</p>
               </div>
             ` : '').join('')}
           </div>
@@ -1205,8 +1222,8 @@ export default function App() {
         ? `
           <div class="report-section">
             <h2>🔮 나풀이 운세 해설</h2>
-            <div class="report-block"><p>${unseForPdf.replace(/\n/g, '<br>')}</p></div>
-            ${unseDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${unseDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
+            <div class="report-block"><p>${escapeHtmlBreaks(unseForPdf)}</p></div>
+            ${unseDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${escapeHtmlBreaks(unseDeepForPdf)}</p></div>` : ''}
           </div>
         `
         : '';
@@ -1215,8 +1232,8 @@ export default function App() {
         ? `
           <div class="report-section">
             <h2>🏡 풍수 수리 가이드</h2>
-            <div class="report-block"><p>${fengShuiForPdf.replace(/\n/g, '<br>')}</p></div>
-            ${fengShuiDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${fengShuiDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
+            <div class="report-block"><p>${escapeHtmlBreaks(fengShuiForPdf)}</p></div>
+            ${fengShuiDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${escapeHtmlBreaks(fengShuiDeepForPdf)}</p></div>` : ''}
           </div>
         `
         : '';
@@ -1225,7 +1242,7 @@ export default function App() {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>나풀이 | ${result.formData.name}님의 사주 MBTI 분석 보고서</title>
+          <title>나풀이 | ${escapeHtml(result.formData.name)}님의 사주 MBTI 분석 보고서</title>
           <meta charset="utf-8">
           <style>
             body {
@@ -1315,15 +1332,15 @@ export default function App() {
           <table class="meta-table">
             <tr>
               <th>이름</th>
-              <td>${result.formData.name}</td>
+              <td>${escapeHtml(result.formData.name)}</td>
               <th>성별</th>
               <td>${result.formData.gender === 'male' ? '남성' : '여성'}</td>
               <th>MBTI</th>
-              <td>${result.formData.mbti}</td>
+              <td>${escapeHtml(result.formData.mbti)}</td>
             </tr>
             <tr>
               <th>생년월일</th>
-              <td colspan="2">${result.formData.birthYear}년 ${result.formData.birthMonth}월 ${result.formData.birthDay}일</td>
+              <td colspan="2">${escapeHtml(result.formData.birthYear)}년 ${escapeHtml(result.formData.birthMonth)}월 ${escapeHtml(result.formData.birthDay)}일</td>
               <th>태어난 시간</th>
               <td colspan="2">${saju.hourPillar ? `${result.hourBranch.name} (${result.hourBranch.time})` : '모름'}</td>
             </tr>
