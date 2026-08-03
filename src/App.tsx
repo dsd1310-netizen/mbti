@@ -12,6 +12,11 @@ import {
   generateElementSummaryInterpretation,
   generateCompatibilitySummaryInterpretation,
   generatePillarInterpretation,
+  generateCategoryDeepInterpretation,
+  generateFengShuiDeepInterpretation,
+  generateFortuneDeepInterpretation,
+  generateElementSummaryDeepInterpretation,
+  generateCompatibilitySummaryDeepInterpretation,
 } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
@@ -169,6 +174,22 @@ function elementSummaryCacheKey(f: CacheKeyBase): string {
 function compatSummaryCacheKey(f: CacheKeyBase): string {
   return `saju_compatsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
 }
+function categoryDeepCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
+  const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
+  return `saju_category_${category}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}${answerSuffix}_deep`;
+}
+function fengShuiDeepCacheKey(f: CacheKeyBase): string {
+  return `saju_fengshui_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+}
+function unseDeepCacheKey(f: CacheKeyBase, year: number): string {
+  return `saju_unse_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${year}_deep`;
+}
+function elementSummaryDeepCacheKey(f: CacheKeyBase): string {
+  return `saju_elementsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+}
+function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
+  return `saju_compatsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+}
 function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
   return `saju_pillar_${key}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
 }
@@ -231,6 +252,18 @@ export default function App() {
   const [dailyFortuneData, setDailyFortuneData] = useState<DailyFortune | null>(null);
   const [dailyFortuneLoading, setDailyFortuneLoading] = useState(false);
 
+  // 심화해석(🔍 십신·MBTI 상세 근거, 3배 이상 분량) — 8개 섹션 공통, "_deep" 캐시로 별도 저장
+  const [categoryDeepData, setCategoryDeepData] = useState<Partial<Record<AiCategoryKey, string>>>({});
+  const [categoryDeepLoading, setCategoryDeepLoading] = useState<Partial<Record<AiCategoryKey, boolean>>>({});
+  const [fengShuiDeepText, setFengShuiDeepText] = useState<string | null>(null);
+  const [fengShuiDeepLoading, setFengShuiDeepLoading] = useState(false);
+  const [unseDeepText, setUnseDeepText] = useState<string | null>(null);
+  const [unseDeepLoading, setUnseDeepLoading] = useState(false);
+  const [elementSummaryDeepText, setElementSummaryDeepText] = useState<string | null>(null);
+  const [elementSummaryDeepLoading, setElementSummaryDeepLoading] = useState(false);
+  const [compatSummaryDeepText, setCompatSummaryDeepText] = useState<string | null>(null);
+  const [compatSummaryDeepLoading, setCompatSummaryDeepLoading] = useState(false);
+
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
 
@@ -241,20 +274,26 @@ export default function App() {
 
   // 풍수 수리 가이드 / 운세 해설 캐시 로드
   useEffect(() => {
-    if (!result) { setFengShuiText(null); setUnseText(null); return; }
+    if (!result) { setFengShuiText(null); setUnseText(null); setFengShuiDeepText(null); setUnseDeepText(null); return; }
     setFengShuiText(localStorage.getItem(fengShuiCacheKey(result.formData)));
     setUnseText(localStorage.getItem(unseCacheKey(result.formData, new Date().getFullYear())));
+    setFengShuiDeepText(localStorage.getItem(fengShuiDeepCacheKey(result.formData)));
+    setUnseDeepText(localStorage.getItem(unseDeepCacheKey(result.formData, new Date().getFullYear())));
   }, [result]);
 
   // AI 해석 4개 카테고리 + 처방전 캐시 로드
   useEffect(() => {
-    if (!result) { setCategoryData({}); setPrescriptionsData(null); return; }
+    if (!result) { setCategoryData({}); setCategoryDeepData({}); setPrescriptionsData(null); return; }
     const loaded: Partial<Record<AiCategoryKey, CategoryInterpretation>> = {};
+    const loadedDeep: Partial<Record<AiCategoryKey, string>> = {};
     (['personality', 'career', 'romance', 'wealth'] as AiCategoryKey[]).forEach(cat => {
       const cached = localStorage.getItem(categoryCacheKey(result.formData, result.formData.mbti, cat));
       if (cached) { try { loaded[cat] = JSON.parse(cached); } catch {} }
+      const cachedDeep = localStorage.getItem(categoryDeepCacheKey(result.formData, result.formData.mbti, cat));
+      if (cachedDeep) loadedDeep[cat] = cachedDeep;
     });
     setCategoryData(loaded);
+    setCategoryDeepData(loadedDeep);
 
     const cachedPrescriptions = localStorage.getItem(prescriptionsCacheKey(result.formData, result.formData.mbti));
     if (cachedPrescriptions) {
@@ -266,9 +305,11 @@ export default function App() {
 
   // 오행/궁합 종합 해설 캐시 로드
   useEffect(() => {
-    if (!result) { setElementSummaryText(null); setCompatSummaryText(null); return; }
+    if (!result) { setElementSummaryText(null); setCompatSummaryText(null); setElementSummaryDeepText(null); setCompatSummaryDeepText(null); return; }
     setElementSummaryText(localStorage.getItem(elementSummaryCacheKey(result.formData)));
     setCompatSummaryText(localStorage.getItem(compatSummaryCacheKey(result.formData)));
+    setElementSummaryDeepText(localStorage.getItem(elementSummaryDeepCacheKey(result.formData)));
+    setCompatSummaryDeepText(localStorage.getItem(compatSummaryDeepCacheKey(result.formData)));
   }, [result]);
 
   // 오늘의 나풀이(데일리 운세) 캐시 로드 (오늘 날짜 기준)
@@ -323,6 +364,46 @@ export default function App() {
     } finally {
       setCategoryLoading(prev => ({ ...prev, [category]: false }));
     }
+  };
+
+  // 카테고리 심화해석(🔍 더보기) 생성 — 십신·MBTI 상세 근거로 3배 이상 분량
+  const handleGenerateCategoryDeep = async (category: AiCategoryKey, answers?: CategoryUserAnswer[]): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setCategoryDeepLoading(prev => ({ ...prev, [category]: true }));
+    try {
+      const text = await generateCategoryDeepInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.formData.gender,
+        result.formData.mbti,
+        result.sajuResult,
+        category,
+        answers,
+      );
+      setCategoryDeepData(prev => ({ ...prev, [category]: text }));
+      localStorage.setItem(categoryDeepCacheKey(result.formData, result.formData.mbti, category, answers), text);
+      return text;
+    } catch (err: any) {
+      showToast(`${CATEGORY_TAB_META[category].bookmarkCategory} 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setCategoryDeepLoading(prev => ({ ...prev, [category]: false }));
+    }
+  };
+
+  // 카테고리별 사용자 답변 목록 조합 (짧은 해석/심화해석 생성 시 공통으로 사용)
+  const getAnsweredForCategory = (cat: AiCategoryKey): CategoryUserAnswer[] | undefined => {
+    if (!isQuestionableCategory(cat)) return undefined;
+    const qs = CATEGORY_QUESTIONS[cat];
+    const ans = categoryAnswers[cat] ?? [undefined, undefined];
+    const answered: CategoryUserAnswer[] = qs
+      .map((q, qIdx) => ({ question: q.question, answer: ans[qIdx] }))
+      .filter((a): a is CategoryUserAnswer => !!a.answer);
+    return answered.length > 0 ? answered : undefined;
   };
 
   // 3대 실천 처방전 생성
@@ -380,6 +461,34 @@ export default function App() {
     }
   };
 
+  // 풍수 가이드 심화해석(🔍 더보기) 생성
+  const handleGenerateFengShuiDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setFengShuiDeepLoading(true);
+    try {
+      const text = await generateFengShuiDeepInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.formData.birthYear,
+        result.formData.birthMonth,
+        result.formData.birthDay,
+        result.sajuResult,
+      );
+      setFengShuiDeepText(text);
+      localStorage.setItem(fengShuiDeepCacheKey(result.formData), text);
+      return text;
+    } catch (err: any) {
+      showToast(`풍수 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setFengShuiDeepLoading(false);
+    }
+  };
+
   // 운세(현재 대운 + 최근 3개년 세운) 해설 AI 생성 (연도 기준 캐싱)
   const handleGenerateUnse = async (): Promise<string | null> => {
     if (!result) return null;
@@ -418,6 +527,45 @@ export default function App() {
     }
   };
 
+  // 운세 흐름 심화해석(🔍 더보기) 생성
+  const handleGenerateUnseDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    const nowYear = new Date().getFullYear();
+    const daeunIdx = result.sajuResult.daeunList.reduce(
+      (acc, entry, idx) => (entry.age <= currentAge ? idx : acc), -1
+    );
+    const daeun = result.sajuResult.daeunList[daeunIdx] ?? result.sajuResult.daeunList[0];
+    const seunEntries = result.sajuResult.seunList
+      .filter(s => s.year >= nowYear - 1 && s.year <= nowYear + 1)
+      .map(s => ({ year: s.year, ganji: `${s.stem}${s.branch}`, hanja: `${s.stemHanja}${s.branchHanja}`, isCurrent: s.year === nowYear }));
+
+    setUnseDeepLoading(true);
+    try {
+      const text = await generateFortuneDeepInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.sajuResult.dayStem,
+        daeun.age,
+        `${daeun.stem}${daeun.branch}`,
+        `${daeun.stemHanja}${daeun.branchHanja}`,
+        seunEntries,
+        result.sajuResult,
+      );
+      setUnseDeepText(text);
+      localStorage.setItem(unseDeepCacheKey(result.formData, nowYear), text);
+      return text;
+    } catch (err: any) {
+      showToast(`운세 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setUnseDeepLoading(false);
+    }
+  };
+
   // 오행 종합 해설 AI 생성
   const handleGenerateElementSummary = async (): Promise<string | null> => {
     if (!result) return null;
@@ -436,6 +584,27 @@ export default function App() {
       return null;
     } finally {
       setElementSummaryLoading(false);
+    }
+  };
+
+  // 오행 종합 심화해석(🔍 더보기) 생성
+  const handleGenerateElementSummaryDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setElementSummaryDeepLoading(true);
+    try {
+      const text = await generateElementSummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult);
+      setElementSummaryDeepText(text);
+      localStorage.setItem(elementSummaryDeepCacheKey(result.formData), text);
+      return text;
+    } catch (err: any) {
+      showToast(`오행 종합 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setElementSummaryDeepLoading(false);
     }
   };
 
@@ -466,6 +635,36 @@ export default function App() {
       return null;
     } finally {
       setCompatSummaryLoading(false);
+    }
+  };
+
+  // 궁합 종합 심화해석(🔍 더보기) 생성
+  const handleGenerateCompatSummaryDeep = async (): Promise<string | null> => {
+    if (!result || !dayBranchRelations) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setCompatSummaryDeepLoading(true);
+    try {
+      const text = await generateCompatibilitySummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, {
+        dayBranchAnimal,
+        dayBranchHanja: result.sajuResult.dayPillar.branchHanja,
+        samhap: dayBranchRelations.samhapPartners.map(p => `${p.animal}띠`),
+        yukhap: dayBranchRelations.yukhapPartner ? `${dayBranchRelations.yukhapPartner.animal}띠` : null,
+        chung: dayBranchRelations.chungPartner ? `${dayBranchRelations.chungPartner.animal}띠` : null,
+        hyeong: dayBranchRelations.hyeongPartners.map(p => `${p.animal}띠`),
+        pa: dayBranchRelations.paPartner ? `${dayBranchRelations.paPartner.animal}띠` : null,
+        hae: dayBranchRelations.haePartner ? `${dayBranchRelations.haePartner.animal}띠` : null,
+      }, result.sajuResult);
+      setCompatSummaryDeepText(text);
+      localStorage.setItem(compatSummaryDeepCacheKey(result.formData), text);
+      return text;
+    } catch (err: any) {
+      showToast(`궁합 종합 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setCompatSummaryDeepLoading(false);
     }
   };
 
@@ -825,9 +1024,13 @@ export default function App() {
     setPdfGenerating(true);
     try {
       const categoriesForPdf: Partial<Record<AiCategoryKey, CategoryInterpretation>> = { ...categoryData };
+      const categoriesDeepForPdf: Partial<Record<AiCategoryKey, string>> = { ...categoryDeepData };
       for (const cat of ['personality', 'career', 'romance', 'wealth'] as AiCategoryKey[]) {
         if (!categoriesForPdf[cat] && GEMINI_API_KEY) {
-          categoriesForPdf[cat] = await handleGenerateCategory(cat) ?? undefined;
+          categoriesForPdf[cat] = await handleGenerateCategory(cat, getAnsweredForCategory(cat)) ?? undefined;
+        }
+        if (!categoriesDeepForPdf[cat] && GEMINI_API_KEY) {
+          categoriesDeepForPdf[cat] = await handleGenerateCategoryDeep(cat, getAnsweredForCategory(cat)) ?? undefined;
         }
       }
       const prescriptionsForPdf = prescriptionsData || (GEMINI_API_KEY ? await handleGeneratePrescriptions() : null);
@@ -835,6 +1038,10 @@ export default function App() {
       const compatSummaryForPdf = compatSummaryText || (GEMINI_API_KEY ? await handleGenerateCompatSummary() : null);
       const fengShuiForPdf = fengShuiText || (GEMINI_API_KEY ? await handleGenerateFengShui() : null);
       const unseForPdf = unseText || (GEMINI_API_KEY ? await handleGenerateUnse() : null);
+      const elementSummaryDeepForPdf = elementSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateElementSummaryDeep() : null);
+      const compatSummaryDeepForPdf = compatSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateCompatSummaryDeep() : null);
+      const fengShuiDeepForPdf = fengShuiDeepText || (GEMINI_API_KEY ? await handleGenerateFengShuiDeep() : null);
+      const unseDeepForPdf = unseDeepText || (GEMINI_API_KEY ? await handleGenerateUnseDeep() : null);
 
       // 사주 4기둥 AI 심층 해설도 자동 생성
       const pillarDefs: { key: PillarKey; label: string; pillar: Pillar; staticDesc: string }[] = [
@@ -875,11 +1082,11 @@ export default function App() {
 
       let aiContentHtml = '';
       if (intro) {
-        const categoryBlocks: { icon: string; title: string; data?: CategoryInterpretation }[] = [
-          { icon: '🌟', title: '성격 진단', data: categoriesForPdf.personality },
-          { icon: '💼', title: '커리어 & 재물', data: categoriesForPdf.career },
-          { icon: '💖', title: '연애 & 인간관계', data: categoriesForPdf.romance },
-          { icon: '💰', title: '재물 & 지출', data: categoriesForPdf.wealth },
+        const categoryBlocks: { icon: string; title: string; data?: CategoryInterpretation; deepData?: string }[] = [
+          { icon: '🌟', title: '성격 진단', data: categoriesForPdf.personality, deepData: categoriesDeepForPdf.personality },
+          { icon: '💼', title: '커리어 & 재물', data: categoriesForPdf.career, deepData: categoriesDeepForPdf.career },
+          { icon: '💖', title: '연애 & 인간관계', data: categoriesForPdf.romance, deepData: categoriesDeepForPdf.romance },
+          { icon: '💰', title: '재물 & 지출', data: categoriesForPdf.wealth, deepData: categoriesDeepForPdf.wealth },
         ];
         aiContentHtml = `
           <div class="report-section">
@@ -897,6 +1104,7 @@ export default function App() {
                 <p>${b.data.analysis}</p>
                 <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${b.data.factBomb}</p>
                 <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${b.data.luckyItem}</p>
+                ${b.deepData ? `<h3>🔍 심화해석</h3><p>${b.deepData.replace(/\n/g, '<br>')}</p>` : ''}
               </div>
             ` : '').join('')}
 
@@ -964,6 +1172,7 @@ export default function App() {
               <p>🥀 해(은근한 마찰): ${dayBranchRelations.haePartner ? `${dayBranchRelations.haePartner.animal}띠(${dayBranchRelations.haePartner.hanja})` : '해당 없음'}</p>
             </div>
             ${compatSummaryForPdf ? `<div class="report-block"><h3>💬 궁합 종합 해설</h3><p>${compatSummaryForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
+            ${compatSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 궁합 종합 심화해설</h3><p>${compatSummaryDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
           </div>
         `;
       }
@@ -973,6 +1182,7 @@ export default function App() {
           <div class="report-section">
             <h2>🌿 오행 종합 해설</h2>
             <div class="report-block"><p>${elementSummaryForPdf.replace(/\n/g, '<br>')}</p></div>
+            ${elementSummaryDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${elementSummaryDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
           </div>
         `
         : '';
@@ -996,6 +1206,7 @@ export default function App() {
           <div class="report-section">
             <h2>🔮 나풀이 운세 해설</h2>
             <div class="report-block"><p>${unseForPdf.replace(/\n/g, '<br>')}</p></div>
+            ${unseDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${unseDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
           </div>
         `
         : '';
@@ -1005,6 +1216,7 @@ export default function App() {
           <div class="report-section">
             <h2>🏡 풍수 수리 가이드</h2>
             <div class="report-block"><p>${fengShuiForPdf.replace(/\n/g, '<br>')}</p></div>
+            ${fengShuiDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${fengShuiDeepForPdf.replace(/\n/g, '<br>')}</p></div>` : ''}
           </div>
         `
         : '';
@@ -1952,6 +2164,26 @@ export default function App() {
                   >
                     {elementSummaryLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
                   </button>
+
+                  {elementSummaryDeepText ? (
+                    <div className="deep-dive-block">
+                      <div className="deep-dive-block-header">
+                        <div className="deep-dive-label">🔍 심화해석</div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 11 }}
+                          onClick={() => addBookmark('오행 종합 심화 해설', `${result.formData.name}님의 오행 종합 심화 해설`, elementSummaryDeepText)}
+                        >
+                          🔖 저장
+                        </button>
+                      </div>
+                      <div className="deep-analysis-text">{elementSummaryDeepText}</div>
+                    </div>
+                  ) : (
+                    <button className="btn-deep-dive" onClick={handleGenerateElementSummaryDeep} disabled={elementSummaryDeepLoading}>
+                      {elementSummaryDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                    </button>
+                  )}
                 </>
               ) : (
                 <div>
@@ -2053,6 +2285,26 @@ export default function App() {
                   >
                     {unseLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
                   </button>
+
+                  {unseDeepText ? (
+                    <div className="deep-dive-block">
+                      <div className="deep-dive-block-header">
+                        <div className="deep-dive-label">🔍 심화해석</div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 11 }}
+                          onClick={() => addBookmark('운세 심화 해설', `${result.formData.name}님의 운세 심화 해설`, unseDeepText)}
+                        >
+                          🔖 저장
+                        </button>
+                      </div>
+                      <div className="deep-analysis-text">{unseDeepText}</div>
+                    </div>
+                  ) : (
+                    <button className="btn-deep-dive" onClick={handleGenerateUnseDeep} disabled={unseDeepLoading}>
+                      {unseDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                    </button>
+                  )}
                 </>
               ) : (
                 <div>
@@ -2170,6 +2422,26 @@ export default function App() {
                     >
                       {compatSummaryLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
                     </button>
+
+                    {compatSummaryDeepText ? (
+                      <div className="deep-dive-block">
+                        <div className="deep-dive-block-header">
+                          <div className="deep-dive-label">🔍 심화해석</div>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: 11 }}
+                            onClick={() => addBookmark('궁합 종합 심화 해설', `${result.formData.name}님의 궁합 종합 심화 해설`, compatSummaryDeepText)}
+                          >
+                            🔖 저장
+                          </button>
+                        </div>
+                        <div className="deep-analysis-text">{compatSummaryDeepText}</div>
+                      </div>
+                    ) : (
+                      <button className="btn-deep-dive" onClick={handleGenerateCompatSummaryDeep} disabled={compatSummaryDeepLoading}>
+                        {compatSummaryDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                      </button>
+                    )}
                   </>
                 ) : (
                   <div>
@@ -2321,6 +2593,34 @@ export default function App() {
                               <div className="lucky-item-box">
                                 {categoryData[cat]!.luckyItem}
                               </div>
+
+                              {categoryDeepData[cat] ? (
+                                <div className="deep-dive-block">
+                                  <div className="deep-dive-block-header">
+                                    <div className="deep-dive-label">🔍 심화해석</div>
+                                    <button
+                                      className="btn-secondary"
+                                      style={{ padding: '6px 12px', fontSize: 11 }}
+                                      onClick={() => addBookmark(
+                                        `${CATEGORY_TAB_META[cat].bookmarkCategory} 심화`,
+                                        `${CATEGORY_TAB_META[cat].bookmarkTitle} (심화해석)`,
+                                        categoryDeepData[cat]!
+                                      )}
+                                    >
+                                      🔖 저장
+                                    </button>
+                                  </div>
+                                  <div className="deep-analysis-text">{categoryDeepData[cat]}</div>
+                                </div>
+                              ) : (
+                                <button
+                                  className="btn-deep-dive"
+                                  onClick={() => handleGenerateCategoryDeep(cat, getAnsweredForCategory(cat))}
+                                  disabled={!!categoryDeepLoading[cat]}
+                                >
+                                  {categoryDeepLoading[cat] ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                                </button>
+                              )}
                             </>
                           ) : (
                             <div>
@@ -2367,18 +2667,7 @@ export default function App() {
 
                               <button
                                 className="btn-primary"
-                                onClick={() => {
-                                  if (isQuestionableCategory(cat)) {
-                                    const qs = CATEGORY_QUESTIONS[cat];
-                                    const ans = categoryAnswers[cat] ?? [undefined, undefined];
-                                    const answered: CategoryUserAnswer[] = qs
-                                      .map((q, qIdx) => ({ question: q.question, answer: ans[qIdx] }))
-                                      .filter((a): a is CategoryUserAnswer => !!a.answer);
-                                    handleGenerateCategory(cat, answered.length > 0 ? answered : undefined);
-                                  } else {
-                                    handleGenerateCategory(cat);
-                                  }
-                                }}
+                                onClick={() => handleGenerateCategory(cat, getAnsweredForCategory(cat))}
                                 disabled={!!categoryLoading[cat]}
                               >
                                 {categoryLoading[cat] ? <span>✨ 생성 중...</span> : <span>{CATEGORY_TAB_META[cat].generateLabel}</span>}
@@ -2460,6 +2749,26 @@ export default function App() {
                   >
                     {fengShuiLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
                   </button>
+
+                  {fengShuiDeepText ? (
+                    <div className="deep-dive-block">
+                      <div className="deep-dive-block-header">
+                        <div className="deep-dive-label">🔍 심화해석</div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 11 }}
+                          onClick={() => addBookmark('풍수 심화 가이드', `${result.formData.name}님의 풍수 심화 가이드`, fengShuiDeepText)}
+                        >
+                          🔖 저장
+                        </button>
+                      </div>
+                      <div className="deep-analysis-text">{fengShuiDeepText}</div>
+                    </div>
+                  ) : (
+                    <button className="btn-deep-dive" onClick={handleGenerateFengShuiDeep} disabled={fengShuiDeepLoading}>
+                      {fengShuiDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                    </button>
+                  )}
                 </>
               ) : (
                 <div>

@@ -6,10 +6,10 @@
 
 :root {
   --bg-deep: #050510;
-  --bg-card: rgba(10, 12, 35, 0.75);
-  --bg-card-hover: rgba(15, 18, 50, 0.9);
-  --border: rgba(120, 100, 255, 0.2);
-  --border-gold: rgba(255, 200, 80, 0.3);
+  --bg-card: rgba(24, 20, 58, 0.82);
+  --bg-card-hover: rgba(32, 27, 70, 0.92);
+  --border: rgba(150, 130, 255, 0.32);
+  --border-gold: rgba(255, 210, 100, 0.42);
   --gold: #f5c842;
   --gold-light: #ffe577;
   --purple: #8b5cf6;
@@ -57,25 +57,26 @@ body {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.7) 0%, transparent 100%),
-    radial-gradient(1px 1px at 25% 40%, rgba(255,255,255,0.5) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 40% 8%, rgba(255,255,255,0.8) 0%, transparent 100%),
-    radial-gradient(1px 1px at 55% 60%, rgba(255,255,255,0.4) 0%, transparent 100%),
-    radial-gradient(1px 1px at 70% 25%, rgba(255,255,255,0.6) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 85% 45%, rgba(255,255,255,0.7) 0%, transparent 100%),
-    radial-gradient(1px 1px at 15% 75%, rgba(255,255,255,0.5) 0%, transparent 100%),
-    radial-gradient(1px 1px at 30% 90%, rgba(255,255,255,0.4) 0%, transparent 100%),
-    radial-gradient(1px 1px at 60% 80%, rgba(255,255,255,0.6) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 90% 70%, rgba(255,255,255,0.5) 0%, transparent 100%),
-    radial-gradient(1px 1px at 5% 55%, rgba(255,255,255,0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 48% 35%, rgba(255,255,255,0.6) 0%, transparent 100%),
-    radial-gradient(1px 1px at 78% 88%, rgba(255,255,255,0.4) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 92% 12%, rgba(255,255,255,0.7) 0%, transparent 100%),
-    radial-gradient(1px 1px at 35% 65%, rgba(255,255,255,0.3) 0%, transparent 100%),
-    radial-gradient(2px 2px at 65% 5%, rgba(200,180,255,0.8) 0%, transparent 100%),
-    radial-gradient(2px 2px at 20% 30%, rgba(180,200,255,0.6) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 80% 55%, rgba(255,220,150,0.7) 0%, transparent 100%);
+    radial-gradient(1.5px 1.5px at 10% 15%, rgba(255,255,255,0.85) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 25% 40%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(2px 2px at 40% 8%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 55% 60%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 70% 25%, rgba(255,220,150,0.75) 0%, transparent 100%),
+    radial-gradient(2px 2px at 85% 45%, rgba(255,255,255,0.85) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 15% 75%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 30% 90%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 60% 80%, rgba(255,220,150,0.7) 0%, transparent 100%),
+    radial-gradient(2px 2px at 90% 70%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5% 55%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 48% 35%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 78% 88%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(2px 2px at 92% 12%, rgba(255,255,255,0.85) 0%, transparent 100%),
+    radial-gradient(1px 1px at 35% 65%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(2.5px 2.5px at 65% 5%, rgba(200,180,255,0.9) 0%, transparent 100%),
+    radial-gradient(2.5px 2.5px at 20% 30%, rgba(180,200,255,0.7) 0%, transparent 100%),
+    radial-gradient(2px 2px at 80% 55%, rgba(255,220,150,0.85) 0%, transparent 100%);
   background-size: 100% 100%;
+  filter: drop-shadow(0 0 3px rgba(255,255,255,0.35));
   animation: twinkle 6s ease-in-out infinite alternate;
 }
 
@@ -324,15 +325,15 @@ body {
   border: 1px solid var(--border);
   border-radius: 24px;
   padding: 28px;
-  box-shadow: 0 4px 30px rgba(0, 0, 30, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 30, 0.45), inset 0 1px 0 rgba(255,255,255,0.09);
 }
 .glass-card-gold {
-  background: linear-gradient(145deg, rgba(10, 8, 30, 0.9), rgba(20, 15, 50, 0.9));
+  background: linear-gradient(145deg, rgba(22, 18, 48, 0.92), rgba(34, 26, 68, 0.92));
   backdrop-filter: blur(20px);
   border: 1px solid var(--border-gold);
   border-radius: 24px;
   padding: 28px;
-  box-shadow: 0 4px 30px rgba(0, 0, 30, 0.5), 0 0 30px rgba(245, 200, 66, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 30, 0.45), 0 0 34px rgba(245, 200, 66, 0.14);
 }
 
 /* ── 섹션 타이틀 ─────────────────────────────────── */
@@ -439,8 +440,8 @@ body {
 }
 .form-input {
   width: 100%;
-  background: rgba(5, 5, 25, 0.9);
-  border: 1px solid rgba(100, 80, 200, 0.25);
+  background: rgba(20, 18, 50, 0.85);
+  border: 1px solid rgba(130, 110, 230, 0.38);
   border-radius: 14px;
   padding: 13px 16px;
   color: var(--text-primary);
@@ -459,8 +460,8 @@ body {
 
 .form-select {
   width: 100%;
-  background: rgba(5, 5, 25, 0.9);
-  border: 1px solid rgba(100, 80, 200, 0.25);
+  background: rgba(20, 18, 50, 0.85);
+  border: 1px solid rgba(130, 110, 230, 0.38);
   border-radius: 14px;
   padding: 13px 16px;
   color: var(--text-primary);
@@ -496,8 +497,8 @@ body {
 .hour-btn {
   padding: 12px 10px;
   border-radius: 14px;
-  border: 1px solid rgba(100, 80, 200, 0.2);
-  background: rgba(5, 5, 25, 0.7);
+  border: 1px solid rgba(130, 110, 230, 0.32);
+  background: rgba(20, 18, 50, 0.68);
   cursor: pointer;
   text-align: left;
   transition: all 0.2s;
@@ -507,8 +508,8 @@ body {
   font-family: inherit;
 }
 .hour-btn:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  background: rgba(15, 15, 50, 0.8);
+  border-color: rgba(139, 92, 246, 0.55);
+  background: rgba(30, 26, 68, 0.85);
 }
 .hour-btn.selected {
   border-color: var(--gold);
@@ -530,7 +531,7 @@ body {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 6px;
-  background: rgba(30, 30, 60, 0.8);
+  background: rgba(45, 40, 85, 0.85);
   color: var(--silver);
   width: fit-content;
 }
@@ -1194,6 +1195,45 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 16px;
   padding: 20px;
+}
+
+.btn-deep-dive {
+  margin-top: 14px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+  background: rgba(245, 200, 66, 0.08);
+  border: 1px solid rgba(245, 200, 66, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-deep-dive:hover:not(:disabled) {
+  background: rgba(245, 200, 66, 0.15);
+  border-color: rgba(245, 200, 66, 0.55);
+}
+.btn-deep-dive:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deep-dive-block {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(245, 200, 66, 0.25);
+}
+.deep-dive-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.deep-dive-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--gold);
+  letter-spacing: 0.02em;
 }
 
 .fact-bomb-box {

@@ -85,6 +85,74 @@ export interface ElementCounts {
   water: number;
 }
 
+// ─── 십신(十神) ───────────────────────────────────────────────
+export type SipsinType =
+  | '비견' | '겁재' | '식신' | '상관' | '편재' | '정재' | '편관' | '정관' | '편인' | '정인';
+
+// 오행 상생(내가 생하는 대상): 목→화→토→금→수→목
+const ELEMENT_GENERATES: Record<string, string> = { wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood' };
+// 오행 상극(내가 극하는 대상): 목→토→수→화→금→목
+const ELEMENT_CONTROLS: Record<string, string> = { wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood' };
+
+// 십신 판별 시 지장간 정기(正氣)의 음양이 지지 명목 음양과 반대인 지지 (자·사·오·해)
+const SIPSIN_BRANCH_YINYANG_FLIP = new Set([0, 5, 6, 11]);
+
+function resolveSipsin(dayElement: string, dayYinYang: string, targetElement: string, targetYinYang: string): SipsinType {
+  const sameYinYang = dayYinYang === targetYinYang;
+  if (targetElement === dayElement) return sameYinYang ? '비견' : '겁재';
+  if (ELEMENT_GENERATES[dayElement] === targetElement) return sameYinYang ? '식신' : '상관';
+  if (ELEMENT_CONTROLS[dayElement] === targetElement) return sameYinYang ? '편재' : '정재';
+  if (ELEMENT_CONTROLS[targetElement] === dayElement) return sameYinYang ? '편관' : '정관';
+  return sameYinYang ? '편인' : '정인'; // ELEMENT_GENERATES[targetElement] === dayElement
+}
+
+export interface SipsinProfile {
+  yearStem: SipsinType;
+  yearBranch: SipsinType;
+  monthStem: SipsinType;
+  monthBranch: SipsinType;
+  dayBranch: SipsinType;
+  hourStem: SipsinType | null;
+  hourBranch: SipsinType | null;
+  counts: Partial<Record<SipsinType, number>>;
+}
+
+function calcSipsin(
+  dayStemIdx: number,
+  yearPillar: Pillar,
+  monthPillar: Pillar,
+  dayPillar: Pillar,
+  hourPillar: Pillar | null,
+): SipsinProfile {
+  const dayStem = HEAVENLY_STEMS[dayStemIdx];
+  const { element: dayElement, yinYang: dayYinYang } = dayStem;
+
+  const stemSipsin = (stemIdx: number): SipsinType => {
+    const s = HEAVENLY_STEMS[stemIdx];
+    return resolveSipsin(dayElement, dayYinYang, s.element, s.yinYang);
+  };
+  const branchSipsin = (branchIdx: number): SipsinType => {
+    const b = EARTHLY_BRANCHES[branchIdx];
+    const yinYang = SIPSIN_BRANCH_YINYANG_FLIP.has(branchIdx) ? (b.yinYang === 'yang' ? 'yin' : 'yang') : b.yinYang;
+    return resolveSipsin(dayElement, dayYinYang, b.element, yinYang);
+  };
+
+  const yearStem = stemSipsin(yearPillar.stemIdx);
+  const yearBranch = branchSipsin(yearPillar.branchIdx);
+  const monthStem = stemSipsin(monthPillar.stemIdx);
+  const monthBranch = branchSipsin(monthPillar.branchIdx);
+  const dayBranch = branchSipsin(dayPillar.branchIdx);
+  const hourStem = hourPillar ? stemSipsin(hourPillar.stemIdx) : null;
+  const hourBranch = hourPillar ? branchSipsin(hourPillar.branchIdx) : null;
+
+  const all = [yearStem, yearBranch, monthStem, monthBranch, dayBranch, hourStem, hourBranch]
+    .filter((s): s is SipsinType => s !== null);
+  const counts: Partial<Record<SipsinType, number>> = {};
+  all.forEach(s => { counts[s] = (counts[s] ?? 0) + 1; });
+
+  return { yearStem, yearBranch, monthStem, monthBranch, dayBranch, hourStem, hourBranch, counts };
+}
+
 /**
  * 연주(年柱) 계산
  * 기준: 1984년 = 갑자(甲子年), 천간 0, 지지 0
@@ -203,6 +271,7 @@ export interface SajuResult {
   daeunStartAge: number;
   daeunList: DaeunEntry[];
   seunList: SeunEntry[];
+  sipsin: SipsinProfile;
 }
 
 function makePillar(stemIdx: number, branchIdx: number): Pillar {
@@ -438,6 +507,8 @@ export function calculateSaju(
 
   const seunList = calculateSeun(new Date().getFullYear());
 
+  const sipsin = calcSipsin(dayPillar.stemIdx, yearPillar, monthPillar, dayPillar, hourPillar);
+
   return {
     yearPillar,
     monthPillar,
@@ -451,5 +522,6 @@ export function calculateSaju(
     daeunStartAge,
     daeunList,
     seunList,
+    sipsin,
   };
 }
