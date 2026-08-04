@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import heroImage from './assets/hero.png';
-import { calculateSaju, calcDayPillar, HOUR_BRANCHES, EARTHLY_BRANCHES, Pillar, SajuResult } from './utils/sajuCalculator';
+import { calculateSaju, calcDayPillar, HOUR_BRANCHES, EARTHLY_BRANCHES, hourBranchIdFromExactTime, Pillar, SajuResult } from './utils/sajuCalculator';
 import {
   generateSajuIntro, SajuIntro,
   generateCategoryInterpretation, AiCategoryKey, CategoryInterpretation, CategoryUserAnswer,
@@ -54,6 +54,9 @@ interface FormData {
   birthDay: string;
   birthBranch: string;
   hourUnknown: boolean;
+  useExactTime: boolean;
+  exactHour: string;
+  exactMinute: string;
   gender: string;
   mbti: string;
 }
@@ -191,6 +194,9 @@ function categoryCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey
 function prescriptionsCacheKey(f: CacheKeyBase, mbti: string): string {
   return `saju_prescriptions_${baseKeyId(f)}_${mbti}`;
 }
+function aiIntroCacheKey(f: CacheKeyBase, mbti: string): string {
+  return `saju_aiintro_${baseKeyId(f)}_${mbti}`;
+}
 function elementSummaryCacheKey(f: CacheKeyBase): string {
   return `saju_elementsummary_${baseKeyId(f)}`;
 }
@@ -239,6 +245,9 @@ export default function App() {
     birthDay: '27',
     birthBranch: '오시',
     hourUnknown: false,
+    useExactTime: false,
+    exactHour: '',
+    exactMinute: '',
     gender: 'female',
     mbti: 'ENTP',
   });
@@ -1530,6 +1539,18 @@ export default function App() {
       return;
     }
 
+    // 정확한 시:분 입력을 쓰는 경우, 범위 검증 + 대응하는 12시진 id를 미리 구해서
+    // 기존 캐시 키/표시 로직(birthBranch 기반)과의 호환을 맞춰둔다.
+    if (formData.useExactTime && !formData.hourUnknown) {
+      const exactHourNum = parseInt(formData.exactHour);
+      const exactMinuteNum = formData.exactMinute === '' ? 0 : parseInt(formData.exactMinute);
+      if (Number.isNaN(exactHourNum) || exactHourNum < 0 || exactHourNum > 23 || Number.isNaN(exactMinuteNum) || exactMinuteNum < 0 || exactMinuteNum > 59) {
+        showToast('정확한 출생 시각을 시 0~23, 분 0~59 범위로 입력해 주세요!');
+        return;
+      }
+      setFormData(prev => ({ ...prev, birthBranch: hourBranchIdFromExactTime(exactHourNum) }));
+    }
+
     setStep('loading');
     setLoadingIdx(0);
     setIntroError(null);
@@ -1554,7 +1575,9 @@ export default function App() {
       // 사주 계산 (잘못된 날짜 입력 시 예외가 발생할 수 있어 방어)
       let sajuResult: SajuResult;
       try {
-        sajuResult = calculateSaju(year, month, day, formData.birthBranch, formData.gender, formData.hourUnknown);
+        const exactHourNum = formData.useExactTime && !formData.hourUnknown ? parseInt(formData.exactHour) : -1;
+        const exactMinuteNum = formData.useExactTime && !formData.hourUnknown ? (parseInt(formData.exactMinute) || 0) : 0;
+        sajuResult = calculateSaju(year, month, day, formData.birthBranch, formData.gender, formData.hourUnknown, exactHourNum, exactMinuteNum);
       } catch (err) {
         clearInterval(msgInterval);
         showToast('생년월일 입력값이 올바르지 않습니다. 날짜를 다시 확인해 주세요.');
@@ -1565,8 +1588,15 @@ export default function App() {
       let aiIntro: SajuIntro | null = null;
       let errMsg: string | null = null;
 
-      // Gemini AI 첫인상(타이틀+사주풀이) 생성 (내장 API 키 사용)
-      if (GEMINI_API_KEY) {
+      // Gemini AI 첫인상(타이틀+사주풀이) — 이름+생년월일+시간+MBTI 기준으로 캐싱해,
+      // 다이어리에서 같은 사람을 다시 볼 때마다 새로 생성하지 않도록 함
+      const introCacheKey = aiIntroCacheKey(formData, formData.mbti);
+      const cachedIntro = localStorage.getItem(introCacheKey);
+      if (cachedIntro) {
+        try { aiIntro = JSON.parse(cachedIntro); } catch { aiIntro = null; }
+      }
+
+      if (!aiIntro && GEMINI_API_KEY) {
         try {
           aiIntro = await generateSajuIntro(
             GEMINI_API_KEY,
@@ -1579,6 +1609,7 @@ export default function App() {
             formData.birthDay,
             formData.hourUnknown ? '시간 모름' : hourBranch.name,
           );
+          localStorage.setItem(introCacheKey, JSON.stringify(aiIntro));
         } catch (err: any) {
           errMsg = err?.message ?? '나풀이 해석 오류가 발생했습니다.';
         }
@@ -1593,7 +1624,9 @@ export default function App() {
     // 최소 1.5초 로딩 후 실행
     const timer = setTimeout(run, 1500);
     return () => { clearInterval(msgInterval); clearTimeout(timer); };
-  }, [step]);
+    // formData는 로딩 중 변경되지 않지만(제출 시점에 고정), 이 effect가 실제로 읽는 값이라
+    // 의존성 배열에 명시 — 로딩 중 재실행은 없음(참조가 바뀌지 않으므로).
+  }, [step, formData]);
 
   const handleReset = () => {
     setStep('input');
@@ -1663,13 +1696,13 @@ export default function App() {
       </header>
 
       {/* 토스트 */}
-      {toastMsg && <div className="toast">✨ {toastMsg}</div>}
+      {toastMsg && <div className="toast" role="status" aria-live="polite">✨ {toastMsg}</div>}
 
       {/* 모달 (시주 정적 정보 등 범용) */}
       {selectedModal && (
         <div className="modal-overlay" onClick={() => setSelectedModal(null)}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setSelectedModal(null)}>✕</button>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label={selectedModal.title} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setSelectedModal(null)}>✕</button>
             <div style={{ marginBottom: 20 }}>
               <div className="section-label">상세 해석</div>
               <div className="section-title">{selectedModal.title}</div>
@@ -1711,8 +1744,8 @@ export default function App() {
       {/* 모달 (사주 4기둥 AI 심층 해설) */}
       {pillarModal && (
         <div className="modal-overlay" onClick={() => setPillarModal(null)}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setPillarModal(null)}>✕</button>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label={pillarModal.label} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setPillarModal(null)}>✕</button>
             <div style={{ marginBottom: 20 }}>
               <div className="section-label">{pillarModal.label}</div>
               <div className="section-title">{pillarModal.hanjaText} ({pillarModal.koreanText})</div>
@@ -1763,8 +1796,8 @@ export default function App() {
       {/* 모달 (나풀이 다이어리 상세보기) */}
       {diaryDetail && (
         <div className="modal-overlay" onClick={() => setDiaryDetail(null)}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setDiaryDetail(null)}>✕</button>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label={diaryDetail.title} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setDiaryDetail(null)}>✕</button>
             <div style={{ marginBottom: 16 }}>
               <div className="section-label">{diaryDetail.category} · {diaryDetail.date}</div>
               <div className="section-title">{diaryDetail.title}</div>
@@ -1869,6 +1902,14 @@ export default function App() {
                     style={{ textAlign: 'center' }}
                   />
                 </div>
+                {(() => {
+                  const y = parseInt(formData.birthYear);
+                  return !Number.isNaN(y) && y >= 1930 && y < 1940 ? (
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                      ⚠️ 1940년 이전 출생자는 절기 정밀 데이터가 없어 근사값으로 계산돼요. 절기 경계에 가까운 날짜라면 오차가 있을 수 있어요.
+                    </p>
+                  ) : null;
+                })()}
               </div>
 
               {/* 성별 */}
@@ -1897,15 +1938,51 @@ export default function App() {
                 </div>
                 <label
                   className="flex items-center"
-                  style={{ gap: 8, marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}
+                  style={{ gap: 8, marginBottom: 10, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}
                 >
                   <input
                     type="checkbox"
                     checked={formData.hourUnknown}
-                    onChange={(e) => setFormData(prev => ({ ...prev, hourUnknown: e.target.checked }))}
+                    onChange={(e) => setFormData(prev => ({ ...prev, hourUnknown: e.target.checked, useExactTime: e.target.checked ? false : prev.useExactTime }))}
                   />
                   태어난 시간을 모릅니다 (연·월·일주 3기둥으로만 풀이해요)
                 </label>
+                <label
+                  className="flex items-center"
+                  style={{ gap: 8, marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)', cursor: formData.hourUnknown ? 'not-allowed' : 'pointer', opacity: formData.hourUnknown ? 0.4 : 1 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.useExactTime}
+                    disabled={formData.hourUnknown}
+                    onChange={(e) => setFormData(prev => ({ ...prev, useExactTime: e.target.checked }))}
+                  />
+                  정확한 시:분으로 입력할게요 (더 정밀한 시주 계산, 야자시/조자시 자동 판별)
+                </label>
+                {formData.useExactTime && !formData.hourUnknown ? (
+                  <div className="grid-3" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 4 }}>
+                    <input
+                      className="form-input"
+                      type="number"
+                      name="exactHour"
+                      value={formData.exactHour}
+                      onChange={handleChange}
+                      placeholder="시 (0~23)"
+                      min="0" max="23"
+                      style={{ textAlign: 'center' }}
+                    />
+                    <input
+                      className="form-input"
+                      type="number"
+                      name="exactMinute"
+                      value={formData.exactMinute}
+                      onChange={handleChange}
+                      placeholder="분 (0~59)"
+                      min="0" max="59"
+                      style={{ textAlign: 'center' }}
+                    />
+                  </div>
+                ) : (
                 <div className="hour-grid" style={formData.hourUnknown ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
                   {HOUR_BRANCHES.map(b => (
                     <button
@@ -1923,6 +2000,7 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                )}
               </div>
 
               {/* 제출 버튼 */}

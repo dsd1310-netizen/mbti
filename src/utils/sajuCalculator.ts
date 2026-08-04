@@ -57,6 +57,16 @@ export const HOUR_BRANCHES = [
   { id: '해시', name: '해시 (亥時)', time: '21:00 ~ 23:00', branchIdx: 11, animal: '돼지', desc: '포용의 수(水)기운, 복을 끌어당기는 너그러움과 넉넉한 그릇' },
 ];
 
+/**
+ * 정확한 출생 시각(시)이 주어졌을 때, 대응하는 HOUR_BRANCHES id를 반환.
+ * 캐시 키·시주 표시 등 기존 12시진 선택 기반 코드와의 호환을 위해 사용.
+ */
+export function hourBranchIdFromExactTime(hour: number): string {
+  if (hour === 23) return '야자시';
+  const branchIdx = Math.floor((hour + 1) / 2) % 12;
+  return HOUR_BRANCHES.find(h => h.branchIdx === branchIdx && h.id !== '야자시')?.id ?? '오시';
+}
+
 // ─── 오행 매핑 ────────────────────────────────────────────────
 const ELEMENT_MAP: Record<string, string> = {
   '갑': 'wood', '을': 'wood', '인': 'wood', '묘': 'wood',
@@ -461,15 +471,18 @@ export function calculateSaju(
   exactHour: number = -1,
   exactMinute: number = 0
 ): SajuResult {
-  const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES.find(h => h.id === '오시')!;
-  const hourBranchIdx = hourBranch.branchIdx;
-  const isYajasi = hourBranch.id === '야자시';
-
   // 자시(23:00~01:00) 야자시/조자시 판정 및 시주 시각 보정
   let calcHour = exactHour;
   let calcMinute = exactMinute;
+  let hourBranchIdx: number;
 
-  if (calcHour === -1) {
+  if (calcHour !== -1 && !hourUnknown) {
+    // 정확한 시:분이 주어지면 12시진 버튼 선택과 무관하게 그 시각으로 직접 시진 지지를 산출
+    hourBranchIdx = calcHour === 23 ? 0 : Math.floor((calcHour + 1) / 2) % 12;
+  } else {
+    const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES.find(h => h.id === '오시')!;
+    hourBranchIdx = hourBranch.branchIdx;
+    const isYajasi = hourBranch.id === '야자시';
     // 시간을 모르면 절기/대운 계산에 중립적인 정오(12시)를 기준값으로 사용
     calcHour = hourUnknown ? 12 : (isYajasi ? 23 : (hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1)));
     calcMinute = 0;

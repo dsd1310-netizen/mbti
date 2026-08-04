@@ -37,6 +37,20 @@ function elementCountsStr(elementCounts: ElementCounts): string {
   return Object.entries(elementCounts).map(([k, v]) => `${ELEMENT_KO[k]} ${v}개`).join(', ');
 }
 
+/**
+ * AI 응답이 프롬프트의 JSON 예시 placeholder 문구를 그대로 앞부분에 반환하는 경우가 가끔 있어
+ * (예: "🔥 뼈 때리는 팩폭 한줄평 (존댓말 매운맛): 실제 내용...") 알려진 placeholder 문자열을 방어적으로 제거.
+ * 제거 후 남는 내용이 없으면 fallback을 사용.
+ */
+function cleanField(raw: string | undefined, placeholder: string, fallback: string): string {
+  if (!raw) return fallback;
+  let text = raw.trim();
+  if (text.startsWith(placeholder)) {
+    text = text.slice(placeholder.length).replace(/^[:\s\-–—]+/, '').trim();
+  }
+  return text || fallback;
+}
+
 // ─── JSON 추출 및 부분/잘린 JSON 복구 정규식 파서 ────────────────────────────
 
 /**
@@ -212,10 +226,16 @@ ${hourPillar ? `- 시주(時柱): ${hourPillar.hanjaText}(${hourPillar.text})` :
   const parsed = await callGeminiJsonApi<SajuIntro>(apiKey, prompt, 8192, 45000);
   return {
     title: parsed?.title?.trim() || `${mbti} × 사주 심층 융합 분석`,
-    jungianNote: parsed?.jungianNote?.trim()
-      || '타고난 사주 오행의 기운과 MBTI의 성향이 심층적인 시너지와 반전 매력을 만들어냅니다.',
-    sajuExplanation: parsed?.sajuExplanation?.trim()
-      || '당신의 사주원국은 연주(초년운/조상), 월주(사회성/부모), 일주(본인/배우자), 시주(말년/자식)가 조화롭게 어우러진 우주의 지도입니다. 타고난 사주팔자의 글자들은 각각 자연의 오행(나무, 불, 흙, 쇠, 물)을 상징하며, 당신이 세상을 살아가는 데 든든한 밑거름이자 지도 역할을 해줍니다.',
+    jungianNote: cleanField(
+      parsed?.jungianNote,
+      `MBTI ${mbti}와 사주 일간(${dayStem})의 비유적 융합 분석 (2~3문장)`,
+      '타고난 사주 오행의 기운과 MBTI의 성향이 심층적인 시너지와 반전 매력을 만들어냅니다.',
+    ),
+    sajuExplanation: cleanField(
+      parsed?.sajuExplanation,
+      '사주원국 8글자와 각 기둥의 기운을 초보자 눈높이에서 쉽고 흥미진진하게 설명한 종합 해설 (자연 비유 포함, 5~6줄)',
+      '당신의 사주원국은 연주(초년운/조상), 월주(사회성/부모), 일주(본인/배우자), 시주(말년/자식)가 조화롭게 어우러진 우주의 지도입니다. 타고난 사주팔자의 글자들은 각각 자연의 오행(나무, 불, 흙, 쇠, 물)을 상징하며, 당신이 세상을 살아가는 데 든든한 밑거름이자 지도 역할을 해줍니다.',
+    ),
   };
 }
 
@@ -309,9 +329,9 @@ export async function generateCategoryInterpretation(
 
   const parsed = await callGeminiJsonApi<CategoryInterpretation>(apiKey, prompt, 8192, 45000);
   return {
-    analysis: parsed?.analysis?.trim() || meta.fallback.analysis,
-    factBomb: parsed?.factBomb?.trim() || meta.fallback.factBomb,
-    luckyItem: parsed?.luckyItem?.trim() || meta.fallback.luckyItem,
+    analysis: cleanField(parsed?.analysis, `${meta.label} 심층 분석 (쉬운 비유 사용, 5~7줄)`, meta.fallback.analysis),
+    factBomb: cleanField(parsed?.factBomb, '🔥 뼈 때리는 팩폭 한줄평 (존댓말 매운맛)', meta.fallback.factBomb),
+    luckyItem: cleanField(parsed?.luckyItem, '🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)', meta.fallback.luckyItem),
   };
 }
 
@@ -463,10 +483,16 @@ export async function generateDailyFortune(
 
   const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 8192, 45000);
   return {
-    analysis: parsed?.analysis?.trim()
-      || '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.',
-    factBomb: parsed?.factBomb?.trim()
-      || '🔥 오늘도 계획은 완벽하게 세워놓고 실행은 내일로 미루실 것 같은 예감이 드네요!',
+    analysis: cleanField(
+      parsed?.analysis,
+      '오늘의 기운 설명 + 행동 팁 (2~3문장)',
+      '오늘은 평소의 리듬을 그대로 유지하면 좋은 날입니다. 무리한 결정보다는 익숙한 방식으로 하루를 채워보세요.',
+    ),
+    factBomb: cleanField(
+      parsed?.factBomb,
+      '🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄',
+      '🔥 오늘도 계획은 완벽하게 세워놓고 실행은 내일로 미루실 것 같은 예감이 드네요!',
+    ),
   };
 }
 
