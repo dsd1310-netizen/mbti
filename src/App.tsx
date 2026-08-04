@@ -1144,6 +1144,8 @@ export default function App() {
       const compatSummaryDeepForPdf = compatSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateCompatSummaryDeep() : null);
       const fengShuiDeepForPdf = fengShuiDeepText || (GEMINI_API_KEY ? await handleGenerateFengShuiDeep() : null);
       const unseDeepForPdf = unseDeepText || (GEMINI_API_KEY ? await handleGenerateUnseDeep() : null);
+      const astrologyForPdf = astrologyData || (GEMINI_API_KEY ? await handleGenerateAstrology() : null);
+      const astrologyDeepForPdf = astrologyDeepText || (GEMINI_API_KEY ? await handleGenerateAstrologyDeep() : null);
 
       // 사주 4기둥 AI 심층 해설도 자동 생성
       const pillarDefs: { key: PillarKey; label: string; pillar: Pillar; staticDesc: string }[] = [
@@ -1323,6 +1325,53 @@ export default function App() {
         `
         : '';
 
+      const astro = result.astrologyResult;
+      const ascSign = ZODIAC_SIGNS[astro.ascendantSignIndex];
+      const planetRows = astro.planets.map(p => {
+        const info = PLANETS.find(x => x.key === p.key)!;
+        const sign = ZODIAC_SIGNS[p.signIndex];
+        return `<li>${info.emoji} ${info.name}: ${sign.name} ${p.signDegree.toFixed(1)}° · ${p.houseIndex + 1}하우스${p.dignity ? ` · ${DIGNITY_LABEL[p.dignity]}` : ''}</li>`;
+      }).join('');
+      const houseRows = astro.houseSignIndexes.map((signIdx, i) => `<li>${i + 1}H(${HOUSES[i].meaning}): ${ZODIAC_SIGNS[signIdx].name}</li>`).join('');
+      const aspectRows = astro.aspects.length > 0
+        ? astro.aspects.map(a => {
+          const infoA = PLANETS.find(x => x.key === a.a)!;
+          const infoB = PLANETS.find(x => x.key === a.b)!;
+          return `<li>${infoA.name} — ${infoB.name}: ${a.type} (${a.nature}, 오차 ${a.orb.toFixed(1)}°)</li>`;
+        }).join('')
+        : '<li>해당 없음</li>';
+
+      const astrologyHtml = `
+        <div class="report-section">
+          <h2>🪐 서양 고전점성술 (홀사인)</h2>
+          <div class="report-block">
+            <h3>어센던트(상승궁): ${ascSign.name} ${astro.ascendantDegree.toFixed(1)}°</h3>
+            <p>${astro.isDayChart ? '☀️ 주간 출생 — 목성이 더 길하고, 토성의 흉함이 덜해요.' : '🌙 야간 출생 — 금성이 더 길하고, 화성의 흉함이 더해요.'}</p>
+          </div>
+          <div class="report-block">
+            <h3>7행성 배치</h3>
+            <ul>${planetRows}</ul>
+          </div>
+          <div class="report-block">
+            <h3>12하우스 배치 (홀사인)</h3>
+            <ul>${houseRows}</ul>
+          </div>
+          <div class="report-block">
+            <h3>주요 애스펙트</h3>
+            <ul>${aspectRows}</ul>
+          </div>
+          ${astrologyForPdf ? `
+            <div class="report-block">
+              <h3>🔮 나풀이 별자리 종합 해설</h3>
+              <p>${escapeHtml(astrologyForPdf.analysis)}</p>
+              <p class="fact-bomb"><strong>🔥 뼈 때리는 팩폭:</strong> ${escapeHtml(astrologyForPdf.factBomb)}</p>
+              <p class="lucky-item"><strong>🍀 럭키/상극:</strong> ${escapeHtml(astrologyForPdf.luckyItem)}</p>
+            </div>
+          ` : ''}
+          ${astrologyDeepForPdf ? `<div class="report-block"><h3>🔍 심화해설</h3><p>${escapeHtmlBreaks(astrologyDeepForPdf)}</p></div>` : ''}
+        </div>
+      `;
+
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -1489,6 +1538,7 @@ export default function App() {
           ${pillarHtml}
           ${unseHtml}
           ${fengShuiHtml}
+          ${astrologyHtml}
 
           <script>
             window.onload = function() {
