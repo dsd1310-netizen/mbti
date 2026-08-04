@@ -17,11 +17,13 @@ import {
   generateFortuneDeepInterpretation,
   generateElementSummaryDeepInterpretation,
   generateCompatibilitySummaryDeepInterpretation,
+  generateAstrologyInterpretation, generateAstrologyDeepInterpretation, AstrologyInterpretation,
 } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
+import { calculateAstrology, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
 
 // ─── 나풀이 심볼 (크리스탈볼 속 별) — 헤더 로고에 사용 ────────────────────
 function NapuliMark({ size = 26 }: { size?: number }) {
@@ -57,6 +59,7 @@ interface FormData {
   useExactTime: boolean;
   exactHour: string;
   exactMinute: string;
+  birthCity: string;
   gender: string;
   mbti: string;
 }
@@ -65,6 +68,8 @@ interface AppResult {
   sajuResult: SajuResult;
   hourBranch: typeof HOUR_BRANCHES[0];
   aiIntro: SajuIntro | null;
+  astrologyResult: AstrologyResult;
+  astrologyTimeConfidence: 'exact' | 'approximate' | 'unknown';
 }
 interface Bookmark {
   id: number;
@@ -222,6 +227,13 @@ function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
 function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
   return `saju_pillar_${key}_${baseKeyId(f)}`;
 }
+// 서양점성술은 출생 도시(좌표)에 따라 하우스·어센던트가 달라지므로 baseKeyId에 도시명을 추가로 반영
+function astrologyCacheKey(f: CacheKeyBase, city: string): string {
+  return `saju_astrology_${baseKeyId(f)}_${city}`;
+}
+function astrologyDeepCacheKey(f: CacheKeyBase, city: string): string {
+  return `saju_astrology_${baseKeyId(f)}_${city}_deep`;
+}
 function todayDateStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -236,7 +248,7 @@ const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
   const [step, setStep] = useState<Step>('input');
-  const [activeSection, setActiveSection] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
+  const [activeSection, setActiveSection] = useState<'fortune' | 'ai' | 'compat' | 'fengshui' | 'astrology'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -248,6 +260,7 @@ export default function App() {
     useExactTime: false,
     exactHour: '',
     exactMinute: '',
+    birthCity: '서울',
     gender: 'female',
     mbti: 'ENTP',
   });
@@ -296,6 +309,12 @@ export default function App() {
   const [compatSummaryDeepText, setCompatSummaryDeepText] = useState<string | null>(null);
   const [compatSummaryDeepLoading, setCompatSummaryDeepLoading] = useState(false);
 
+  // 🪐 별자리(서양 고전점성술) AI 해설
+  const [astrologyData, setAstrologyData] = useState<AstrologyInterpretation | null>(null);
+  const [astrologyLoading, setAstrologyLoading] = useState(false);
+  const [astrologyDeepText, setAstrologyDeepText] = useState<string | null>(null);
+  const [astrologyDeepLoading, setAstrologyDeepLoading] = useState(false);
+
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
 
@@ -342,6 +361,15 @@ export default function App() {
     setCompatSummaryText(localStorage.getItem(compatSummaryCacheKey(result.formData)));
     setElementSummaryDeepText(localStorage.getItem(elementSummaryDeepCacheKey(result.formData)));
     setCompatSummaryDeepText(localStorage.getItem(compatSummaryDeepCacheKey(result.formData)));
+  }, [result]);
+
+  // 🪐 별자리(서양점성술) AI 해설 캐시 로드
+  useEffect(() => {
+    if (!result) { setAstrologyData(null); setAstrologyDeepText(null); return; }
+    const cached = localStorage.getItem(astrologyCacheKey(result.formData, result.formData.birthCity));
+    if (cached) { try { setAstrologyData(JSON.parse(cached)); } catch { setAstrologyData(null); } }
+    else { setAstrologyData(null); }
+    setAstrologyDeepText(localStorage.getItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity)));
   }, [result]);
 
   // 오늘의 나풀이(데일리 운세) 캐시 로드 (오늘 날짜 기준)
@@ -697,6 +725,48 @@ export default function App() {
       return null;
     } finally {
       setCompatSummaryDeepLoading(false);
+    }
+  };
+
+  // 🪐 별자리(서양점성술) AI 종합 해설 생성
+  const handleGenerateAstrology = async (): Promise<AstrologyInterpretation | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setAstrologyLoading(true);
+    try {
+      const data = await generateAstrologyInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult);
+      setAstrologyData(data);
+      localStorage.setItem(astrologyCacheKey(result.formData, result.formData.birthCity), JSON.stringify(data));
+      return data;
+    } catch (err: any) {
+      showToast(`별자리 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setAstrologyLoading(false);
+    }
+  };
+
+  // 🪐 별자리(서양점성술) 심화해석 생성
+  const handleGenerateAstrologyDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setAstrologyDeepLoading(true);
+    try {
+      const text = await generateAstrologyDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult);
+      setAstrologyDeepText(text);
+      localStorage.setItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity), text);
+      return text;
+    } catch (err: any) {
+      showToast(`별자리 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setAstrologyDeepLoading(false);
     }
   };
 
@@ -1574,10 +1644,28 @@ export default function App() {
 
       // 사주 계산 (잘못된 날짜 입력 시 예외가 발생할 수 있어 방어)
       let sajuResult: SajuResult;
+      let astrologyResult: AstrologyResult;
+      let astrologyTimeConfidence: 'exact' | 'approximate' | 'unknown';
       try {
         const exactHourNum = formData.useExactTime && !formData.hourUnknown ? parseInt(formData.exactHour) : -1;
         const exactMinuteNum = formData.useExactTime && !formData.hourUnknown ? (parseInt(formData.exactMinute) || 0) : 0;
         sajuResult = calculateSaju(year, month, day, formData.birthBranch, formData.gender, formData.hourUnknown, exactHourNum, exactMinuteNum);
+
+        // 서양점성술은 12시진 근사와 무관하게 실제 시:분이 필요 — 정확도에 따라 timeConfidence로 구분해 UI에 안내
+        let astroHour: number;
+        let astroMinute: number;
+        if (formData.hourUnknown) {
+          astroHour = 12; astroMinute = 0; astrologyTimeConfidence = 'unknown';
+        } else if (formData.useExactTime) {
+          astroHour = exactHourNum; astroMinute = exactMinuteNum; astrologyTimeConfidence = 'exact';
+        } else {
+          const isYajasi = hourBranch.id === '야자시';
+          astroHour = isYajasi ? 23 : (hourBranch.branchIdx === 0 ? 0 : hourBranch.branchIdx * 2 - 1);
+          astroMinute = 0;
+          astrologyTimeConfidence = 'approximate';
+        }
+        const city = KOREAN_CITIES.find(c => c.name === formData.birthCity) ?? KOREAN_CITIES[0];
+        astrologyResult = calculateAstrology(year, month, day, astroHour, astroMinute, city.lat, city.lon, astrologyTimeConfidence);
       } catch (err) {
         clearInterval(msgInterval);
         showToast('생년월일 입력값이 올바르지 않습니다. 날짜를 다시 확인해 주세요.');
@@ -1616,7 +1704,7 @@ export default function App() {
       }
 
       clearInterval(msgInterval);
-      setResult({ formData: { ...formData }, sajuResult, hourBranch, aiIntro });
+      setResult({ formData: { ...formData }, sajuResult, hourBranch, aiIntro, astrologyResult, astrologyTimeConfidence });
       setIntroError(errMsg);
       setStep('result');
     };
@@ -2003,6 +2091,27 @@ export default function App() {
                 )}
               </div>
 
+              {/* 출생 도시 (서양 고전점성술 하우스·어센던트 계산용) */}
+              <div>
+                <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+                  <label className="form-label" style={{ margin: 0 }}>🌌 태어난 도시</label>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>별자리 하우스·어센던트 계산용</span>
+                </div>
+                <select
+                  className="form-select"
+                  name="birthCity"
+                  value={formData.birthCity}
+                  onChange={handleChange}
+                >
+                  {KOREAN_CITIES.map(c => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                  목록에 없는 지역이면 가장 가까운 도시를 선택해 주세요.
+                </p>
+              </div>
+
               {/* 제출 버튼 */}
               <button type="submit" className="btn-primary">
                 <span>✨</span>
@@ -2159,6 +2268,7 @@ export default function App() {
                 { id: 'ai', label: '🔮 나풀이 해석' },
                 { id: 'compat', label: '💑 궁합' },
                 { id: 'fengshui', label: '🏡 풍수' },
+                { id: 'astrology', label: '🪐 별자리' },
               ].map(t => (
                 <button
                   key={t.id}
@@ -2908,6 +3018,161 @@ export default function App() {
                   </button>
                 </div>
               )}
+            </div>
+            )}
+
+            {/* 🪐 별자리 (서양 고전점성술, 홀사인) */}
+            {activeSection === 'astrology' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="glass-card-gold animate-slide-up-delay-2">
+                <div className="section-label">🪐 서양 고전점성술</div>
+                <div className="section-title" style={{ marginBottom: 12 }}>어센던트(상승궁)</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--gold)', marginBottom: 6 }}>
+                  {ZODIAC_SIGNS[result.astrologyResult.ascendantSignIndex].name} {result.astrologyResult.ascendantDegree.toFixed(1)}°
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                  {result.astrologyResult.isDayChart
+                    ? '☀️ 주간 출생 — 목성이 더 길하고, 토성의 흉함이 덜해요.'
+                    : '🌙 야간 출생 — 금성이 더 길하고, 화성의 흉함이 더해요.'}
+                </p>
+                {result.astrologyTimeConfidence !== 'exact' && (
+                  <p style={{ fontSize: 11, color: 'var(--gold)', marginTop: 10, lineHeight: 1.6 }}>
+                    ⚠️ {result.astrologyTimeConfidence === 'unknown'
+                      ? '출생 시간을 몰라 정오로 근사 계산했어요. 하우스·어센던트는 참고만 해주세요.'
+                      : '태어난 시간대의 대표 시각으로 근사 계산했어요. "정확한 시:분 입력"을 쓰면 하우스·어센던트가 더 정확해져요.'}
+                  </p>
+                )}
+                {result.astrologyResult.dstApplied && (
+                  <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                    ℹ️ 이 시기는 한국 서머타임(하절기 표준시)이 적용되어 계산에 반영했어요.
+                  </p>
+                )}
+              </div>
+
+              <div className="glass-card animate-slide-up-delay-2">
+                <div className="section-label">🌟 행성 배치</div>
+                <div className="section-title" style={{ marginBottom: 16 }}>7개 행성이 있는 자리</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {result.astrologyResult.planets.map(p => {
+                    const info = PLANETS.find(x => x.key === p.key)!;
+                    const sign = ZODIAC_SIGNS[p.signIndex];
+                    return (
+                      <div key={p.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 18 }}>{info.emoji}</span>
+                          <span style={{ fontWeight: 700 }}>{info.name}</span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 13 }}>{sign.name} {p.signDegree.toFixed(1)}°</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {p.houseIndex + 1}하우스{p.dignity ? ` · ${DIGNITY_LABEL[p.dignity]}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="glass-card animate-slide-up-delay-2">
+                <div className="section-label">🏠 하우스 배치 (홀사인)</div>
+                <div className="section-title" style={{ marginBottom: 16 }}>1~12하우스가 있는 별자리</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                  {result.astrologyResult.houseSignIndexes.map((signIdx, i) => (
+                    <div key={i} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{i + 1}H · {HOUSES[i].meaning}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{ZODIAC_SIGNS[signIdx].name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {result.astrologyResult.aspects.length > 0 && (
+                <div className="glass-card animate-slide-up-delay-2">
+                  <div className="section-label">⚡ 주요 애스펙트</div>
+                  <div className="section-title" style={{ marginBottom: 16 }}>행성들의 각도 관계</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {result.astrologyResult.aspects.map((a, idx) => {
+                      const infoA = PLANETS.find(x => x.key === a.a)!;
+                      const infoB = PLANETS.find(x => x.key === a.b)!;
+                      return (
+                        <div key={idx} style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', fontSize: 13 }}>
+                          {infoA.emoji} {infoA.name} — {infoB.emoji} {infoB.name}: <strong>{a.type}</strong>
+                          <span style={{ color: 'var(--text-secondary)' }}> ({a.nature}, 오차 {a.orb.toFixed(1)}°)</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="glass-card animate-slide-up-delay-2">
+                <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                  <div>
+                    <div className="section-label">🔮 나풀이 별자리 종합 해설</div>
+                    <div className="section-title">출생 차트가 말해주는 것</div>
+                  </div>
+                  {astrologyData && (
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 11 }}
+                      onClick={() => addBookmark('별자리 종합 해설', `${result.formData.name}님의 별자리 해설`, `${astrologyData.analysis}\n\n${astrologyData.factBomb}\n\n${astrologyData.luckyItem}`)}
+                    >
+                      🔖 저장
+                    </button>
+                  )}
+                </div>
+
+                {astrologyData ? (
+                  <>
+                    <div className="deep-analysis-text">{astrologyData.analysis}</div>
+                    <div className="fact-bomb-box">
+                      <div className="fact-bomb-title">🔥 뼈 때리는 팩폭 한줄평</div>
+                      <div className="fact-bomb-content">{astrologyData.factBomb}</div>
+                    </div>
+                    <div className="lucky-item-box">
+                      {astrologyData.luckyItem}
+                    </div>
+                    <button
+                      className="btn-secondary"
+                      style={{ marginTop: 12, fontSize: 12 }}
+                      onClick={handleGenerateAstrology}
+                      disabled={astrologyLoading}
+                    >
+                      {astrologyLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
+                    </button>
+
+                    {astrologyDeepText ? (
+                      <div className="deep-dive-block">
+                        <div className="deep-dive-block-header">
+                          <div className="deep-dive-label">🔍 심화해석</div>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: 11 }}
+                            onClick={() => addBookmark('별자리 심화 해설', `${result.formData.name}님의 별자리 심화 해설`, astrologyDeepText)}
+                          >
+                            🔖 저장
+                          </button>
+                        </div>
+                        <div className="deep-analysis-text">{astrologyDeepText}</div>
+                      </div>
+                    ) : (
+                      <button className="btn-deep-dive" onClick={handleGenerateAstrologyDeep} disabled={astrologyDeepLoading}>
+                        {astrologyDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                      어센던트와 행성 배치를 바탕으로, 나풀이가 이 출생 차트를 종합 해설해드려요.
+                    </p>
+                    <button className="btn-primary" onClick={handleGenerateAstrology} disabled={astrologyLoading}>
+                      {astrologyLoading ? <span>✨ 생성 중...</span> : <span>🪐 별자리 종합 해설 생성하기</span>}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             )}
 

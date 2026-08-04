@@ -6,6 +6,7 @@
 import { ElementCounts, SajuResult, SipsinProfile, SipsinType } from './sajuCalculator';
 import { MBTI_DATA } from '../data/mbtiTypes';
 import { MBTI_DETAILED } from '../data/mbtiDetailed';
+import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey } from './astrologyCalculator';
 
 // 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열 (2026년 최신 모델 기준)
 const MODELS = [
@@ -860,6 +861,123 @@ export async function generateCompatibilitySummaryDeepInterpretation(
 5. 전체 15~20줄 이상의 충분히 긴, 친근하고 유쾌한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
   return callGeminiPlainApi(apiKey, prompt, '궁합 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+}
+
+// ─── 서양 고전점성술(홀사인) 종합 해설 ──────────────────────────────────────
+
+function planetLabel(key: PlanetKey): string {
+  const p = PLANETS.find(x => x.key === key)!;
+  return `${p.emoji} ${p.name}`;
+}
+
+function formatAstrologySummary(result: AstrologyResult): string {
+  const ascSign = ZODIAC_SIGNS[result.ascendantSignIndex];
+  const lines = [
+    `어센던트(상승궁): ${ascSign.name} ${result.ascendantDegree.toFixed(1)}도`,
+    `섹트(출생 시간대): ${result.isDayChart ? '주간 출생(목성이 더 길하고 토성은 덜 흉함)' : '야간 출생(금성이 더 길하고 화성은 더 흉함)'}`,
+  ];
+  for (const p of result.planets) {
+    const sign = ZODIAC_SIGNS[p.signIndex];
+    const dignityStr = p.dignity ? ` [${DIGNITY_LABEL[p.dignity]}]` : '';
+    lines.push(`${planetLabel(p.key)}: ${sign.name} ${p.signDegree.toFixed(1)}도, ${p.houseIndex + 1}하우스(${HOUSES[p.houseIndex].meaning})${dignityStr}`);
+  }
+  return lines.join('\n');
+}
+
+function formatAstrologyAspects(result: AstrologyResult): string {
+  if (result.aspects.length === 0) return '주요 애스펙트 없음(오브 6도 이내에 형성된 관계 없음)';
+  return result.aspects
+    .map(a => `${planetLabel(a.a)} - ${planetLabel(a.b)}: ${a.type}(${a.nature}, 오차 ${a.orb.toFixed(1)}도)`)
+    .join('\n');
+}
+
+export interface AstrologyInterpretation {
+  analysis: string;
+  factBomb: string;
+  luckyItem: string;
+}
+
+export async function generateAstrologyInterpretation(
+  apiKey: string,
+  name: string,
+  gender: string,
+  result: AstrologyResult,
+): Promise<AstrologyInterpretation> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+
+  const prompt = `당신은 서양 고전점성술(홀사인 하우스 시스템) 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
+아래 ${name}(${genderText}) 님의 출생 차트 정보를 바탕으로 위트 있는 종합 해설을 작성해 주세요.
+
+【 출생 차트 요약 】
+${formatAstrologySummary(result)}
+
+【 주요 애스펙트 】
+${formatAstrologyAspects(result)}
+
+【 작성 지침 】
+1. 어센던트(상승궁)를 중심으로 이 사람이 세상에 어떻게 비치는지, 그리고 태양·달의 별자리로 본질적 성향과 감정 패턴을 짚어주세요.
+2. 도머사일/익절테이션처럼 품위가 강한 행성이 있다면 그 힘이 강하게 드러난다는 점을, 디트리먼트/폴처럼 약한 품위가 있다면 그 영역에서 애를 먹을 수 있다는 점을 자연스럽게 녹여주세요.
+3. 섹트(주간/야간 출생)도 짧게 언급해 이 사람에게 유리하게/불리하게 작용하는 행성이 무엇인지 짚어주세요.
+4. 한자·전문용어를 그대로 나열하지 말고 "무대의 조명", "마음속 날씨" 같은 쉬운 비유를 사용하세요.
+5. 톤앤매너: 예의를 갖추되 정곡을 찌르는 존댓말 팩폭("~해요", "~입니다") 사용.
+6. 5~7줄 이상의 풍부한 심층 분석으로 작성하세요.
+7. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+
+{
+  "analysis": "출생 차트 심층 분석 (쉬운 비유 사용, 5~7줄)",
+  "factBomb": "🔥 뼈 때리는 팩폭 한줄평 (존댓말 매운맛)",
+  "luckyItem": "🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)"
+}`;
+
+  const parsed = await callGeminiJsonApi<AstrologyInterpretation>(apiKey, prompt, 8192, 45000);
+  const fallback: AstrologyInterpretation = {
+    analysis: `${name} 님의 어센던트는 ${ZODIAC_SIGNS[result.ascendantSignIndex].name}로, 세상에 첫인상을 내보이는 방식이 이 별자리의 기질을 닮았습니다. 태양과 달의 별자리가 본질적 성향과 감정의 결을 함께 그려내며, 각 행성이 자리한 하우스가 삶의 어느 영역에서 그 힘을 발휘할지 보여줍니다.`,
+    factBomb: '🔥 어센던트만 봐도 이 사람이 처음 만났을 때와 친해진 뒤가 완전히 다른 사람일 걸 알 수 있죠!',
+    luckyItem: '🍀 럭키 아이템: 별자리 참고 | ⚠️ 상극: 성급하게 판단하는 사람',
+  };
+  return {
+    analysis: cleanField(parsed?.analysis, '출생 차트 심층 분석 (쉬운 비유 사용, 5~7줄)', fallback.analysis),
+    factBomb: cleanField(parsed?.factBomb, '🔥 뼈 때리는 팩폭 한줄평 (존댓말 매운맛)', fallback.factBomb),
+    luckyItem: cleanField(parsed?.luckyItem, '🍀 럭키 아이템: (아이템명) | ⚠️ 상극: (상극 유형 특징)', fallback.luckyItem),
+  };
+}
+
+/**
+ * 서양 고전점성술 심화해석 — 하우스 전체 배치·품위·섹트·애스펙트를 모두 반영, 3배 이상 분량
+ */
+export async function generateAstrologyDeepInterpretation(
+  apiKey: string,
+  name: string,
+  gender: string,
+  result: AstrologyResult,
+): Promise<string> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+  const houseTable = result.houseSignIndexes
+    .map((signIdx, i) => `${i + 1}하우스(${HOUSES[i].meaning}): ${ZODIAC_SIGNS[signIdx].name}`)
+    .join('\n');
+
+  const prompt = `당신은 서양 고전점성술(홀사인 하우스 시스템) 전문가이자, 심리 상담에도 정통한 칼럼니스트입니다.
+아래 ${name}(${genderText}) 님의 출생 차트 전체를 바탕으로, 기존의 짧은 요약보다 3배 이상 풍부한 [심화 해석]을 작성해 주세요.
+
+【 출생 차트 요약 】
+${formatAstrologySummary(result)}
+
+【 하우스 배치(홀사인, 1~12하우스가 각각 어느 별자리인지) 】
+${houseTable}
+
+【 주요 애스펙트 】
+${formatAstrologyAspects(result)}
+
+【 작성 지침 】
+1. 어센던트가 주는 첫인상, 태양·달의 별자리가 그리는 본질과 감정, 수성·금성·화성이 보여주는 소통·연애·행동 방식, 목성·토성이 보여주는 확장과 책임의 영역을 하우스와 연결해 순서대로 다뤄주세요.
+2. 도머사일/익절테이션(강한 품위)과 디트리먼트/폴(약한 품위)에 해당하는 행성이 있다면 그 영역에서 왜 유독 강하거나 애를 먹는지 근거로 짚어주세요.
+3. 섹트(주간/야간 출생)가 어떤 행성을 더 유리하게/불리하게 만드는지 설명하세요.
+4. 애스펙트가 있다면 두 행성의 조합이 실생활에서 어떻게 드러나는지 최소 1개는 구체적 장면으로 풀어주세요(예: 수성-금성이 합을 이루면 말과 매력이 함께 작동하는 상황 등).
+5. 한자·전문용어를 그대로 나열하지 말고 쉬운 비유를 사용하고, 실생활 구체적 예시를 최소 2개 이상 넣어 추상적인 설명에 그치지 않게 하세요.
+6. 존댓말 문체를 유지하되, 딱딱한 보고서가 아니라 재미있게 몰입해서 읽히는 칼럼처럼 작성하세요.
+7. 분량은 15~20줄 이상으로 충분히 길게 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
 }
 
 /**
