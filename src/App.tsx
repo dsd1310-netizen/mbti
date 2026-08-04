@@ -170,52 +170,58 @@ function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: n
   return lines;
 }
 
-type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string };
+// birthBranch/hourUnknown을 반드시 포함해야 함 — 시간에 따라 elementCounts/sipsin(십신)이 달라져,
+// 이름+생년월일만으로 키를 구성하면 시간만 바꿔 재제출했을 때 이전 시간 기준 캐시가 잘못 재사용됨.
+type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string; birthBranch: string; hourUnknown: boolean };
+
+function baseKeyId(f: CacheKeyBase): string {
+  return `${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${f.hourUnknown ? 'unknown' : f.birthBranch}`;
+}
 
 function fengShuiCacheKey(f: CacheKeyBase): string {
-  return `saju_fengshui_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
+  return `saju_fengshui_${baseKeyId(f)}`;
 }
 function unseCacheKey(f: CacheKeyBase, year: number): string {
-  return `saju_unse_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${year}`;
+  return `saju_unse_${baseKeyId(f)}_${year}`;
 }
 function categoryCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
   const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
-  return `saju_category_${category}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}${answerSuffix}`;
+  return `saju_category_${category}_${baseKeyId(f)}_${mbti}${answerSuffix}`;
 }
 function prescriptionsCacheKey(f: CacheKeyBase, mbti: string): string {
-  return `saju_prescriptions_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}`;
+  return `saju_prescriptions_${baseKeyId(f)}_${mbti}`;
 }
 function elementSummaryCacheKey(f: CacheKeyBase): string {
-  return `saju_elementsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
+  return `saju_elementsummary_${baseKeyId(f)}`;
 }
 function compatSummaryCacheKey(f: CacheKeyBase): string {
-  return `saju_compatsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
+  return `saju_compatsummary_${baseKeyId(f)}`;
 }
 function categoryDeepCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
   const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
-  return `saju_category_${category}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${mbti}${answerSuffix}_deep`;
+  return `saju_category_${category}_${baseKeyId(f)}_${mbti}${answerSuffix}_deep`;
 }
 function fengShuiDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_fengshui_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+  return `saju_fengshui_${baseKeyId(f)}_deep`;
 }
 function unseDeepCacheKey(f: CacheKeyBase, year: number): string {
-  return `saju_unse_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${year}_deep`;
+  return `saju_unse_${baseKeyId(f)}_${year}_deep`;
 }
 function elementSummaryDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_elementsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+  return `saju_elementsummary_${baseKeyId(f)}_deep`;
 }
 function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_compatsummary_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_deep`;
+  return `saju_compatsummary_${baseKeyId(f)}_deep`;
 }
 function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
-  return `saju_pillar_${key}_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}`;
+  return `saju_pillar_${key}_${baseKeyId(f)}`;
 }
 function todayDateStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function dailyFortuneCacheKey(f: CacheKeyBase, dateStr: string): string {
-  return `saju_daily_${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${dateStr}`;
+  return `saju_daily_${baseKeyId(f)}_${dateStr}`;
 }
 
 // Gemini API 키는 사용자에게 노출/입력받지 않고 내장 키만 사용합니다.
@@ -1507,6 +1513,23 @@ export default function App() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) { showToast('이름을 입력해 주세요!'); return; }
+
+    // 연/월/일 각 필드는 브라우저 min/max로 개별 범위는 걸러지지만, "2월 30일" 같은 교차 필드 impossible date는
+    // 걸러지지 않아 new Date()가 조용히 다른 날짜로 롤오버시킴 — 여기서 실제 존재하는 날짜인지 재확인.
+    const year = parseInt(formData.birthYear);
+    const month = parseInt(formData.birthMonth);
+    const day = parseInt(formData.birthDay);
+    if (!year || !month || !day) {
+      showToast('생년월일을 모두 입력해 주세요!');
+      return;
+    }
+    const parsedDate = new Date(year, month - 1, day);
+    const isRealDate = parsedDate.getFullYear() === year && parsedDate.getMonth() === month - 1 && parsedDate.getDate() === day;
+    if (!isRealDate) {
+      showToast('존재하지 않는 날짜예요. 생년월일을 다시 확인해 주세요!');
+      return;
+    }
+
     setStep('loading');
     setLoadingIdx(0);
     setIntroError(null);
@@ -1526,7 +1549,7 @@ export default function App() {
       const year = parseInt(formData.birthYear) || 1995;
       const month = parseInt(formData.birthMonth) || 9;
       const day = parseInt(formData.birthDay) || 27;
-      const hourBranch = HOUR_BRANCHES.find(h => h.id === formData.birthBranch) ?? HOUR_BRANCHES[6];
+      const hourBranch = HOUR_BRANCHES.find(h => h.id === formData.birthBranch) ?? HOUR_BRANCHES.find(h => h.id === '오시')!;
 
       // 사주 계산 (잘못된 날짜 입력 시 예외가 발생할 수 있어 방어)
       let sajuResult: SajuResult;
@@ -2409,6 +2432,12 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                {dayBranchRelations.yukhapPartner && dayBranchRelations.paPartner
+                  && dayBranchRelations.yukhapPartner.branchIdx === dayBranchRelations.paPartner.branchIdx && (
+                  <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.6 }}>
+                    ℹ️ {dayBranchRelations.yukhapPartner.animal}띠는 육합이면서 동시에 파에도 해당하는 특수 조합이에요. 명리학적으로 실제로 그런 관계라, 평소엔 찰떡같이 잘 맞다가도 특정 상황에서만 유독 부딪히는 "애증" 궁합으로 이해하면 자연스러워요.
+                  </p>
+                )}
               </div>
 
               {/* 궁합 종합 해설 (AI) */}

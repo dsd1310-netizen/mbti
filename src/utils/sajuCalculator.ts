@@ -39,8 +39,11 @@ export const EARTHLY_BRANCHES = [
 ];
 
 // ─── 시간대 (12시진) ──────────────────────────────────────────
+// 자시(子時, 23:00~01:00)는 자정을 걸쳐 있어 야자시(23시대, 전날 밤)와 조자시(0시대, 당일 새벽)로
+// 나뉜다 — 지지(자)는 둘 다 같지만 일주(日柱) 계산 시 야자시는 다음 날로 이월되어야 함(아래 calculateSaju 참고).
 export const HOUR_BRANCHES = [
-  { id: '자시', name: '자시 (子時)', time: '23:00 ~ 01:00', branchIdx: 0, animal: '쥐', desc: '깊은 수(水)기운, 비밀스러운 기획력과 영민한 지혜' },
+  { id: '야자시', name: '야자시 (子時 초)', time: '23:00 ~ 24:00', branchIdx: 0, animal: '쥐', desc: '깊은 수(水)기운, 비밀스러운 기획력과 영민한 지혜 — 다음 날로 일주가 이월되는 심야 시간대' },
+  { id: '자시', name: '자시 (子時 말)', time: '00:00 ~ 01:00', branchIdx: 0, animal: '쥐', desc: '깊은 수(水)기운, 비밀스러운 기획력과 영민한 지혜' },
   { id: '축시', name: '축시 (丑時)', time: '01:00 ~ 03:00', branchIdx: 1, animal: '소', desc: '묵직한 토(土)기운, 끈기와 인내로 내실을 쌓는 대기만성형' },
   { id: '인시', name: '인시 (寅時)', time: '03:00 ~ 05:00', branchIdx: 2, animal: '호랑이', desc: '강렬한 목(木)기운, 세상을 향해 솟구치는 개척 정신과 카리스마' },
   { id: '묘시', name: '묘시 (卯時)', time: '05:00 ~ 07:00', branchIdx: 3, animal: '토끼', desc: '화사한 목(木)기운, 감각적인 예술성과 사교적 포용력' },
@@ -458,8 +461,9 @@ export function calculateSaju(
   exactHour: number = -1,
   exactMinute: number = 0
 ): SajuResult {
-  const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES[6];
+  const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES.find(h => h.id === '오시')!;
   const hourBranchIdx = hourBranch.branchIdx;
+  const isYajasi = hourBranch.id === '야자시';
 
   // 자시(23:00~01:00) 야자시/조자시 판정 및 시주 시각 보정
   let calcHour = exactHour;
@@ -467,26 +471,26 @@ export function calculateSaju(
 
   if (calcHour === -1) {
     // 시간을 모르면 절기/대운 계산에 중립적인 정오(12시)를 기준값으로 사용
-    calcHour = hourUnknown ? 12 : (hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1));
+    calcHour = hourUnknown ? 12 : (isYajasi ? 23 : (hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1)));
     calcMinute = 0;
   }
 
-  let finalYear = year;
-  let finalMonth = month;
-  let finalDay = day;
-
-  // 야자시 보정: 밤 23:00 ~ 24:00 사이에 출생했다면 다음날로 일주 계산 (기본 정책 적용)
+  // 야자시(23:00~24:00) 보정: 일주(日柱)만 다음 날로 이월. 연주/월주는 절기 판정을 위해
+  // 실제 출생 시각(원래 날짜의 23시대) 그대로 사용해야 하므로 별도로 날짜를 분리해서 계산한다.
+  let dayPillarYear = year;
+  let dayPillarMonth = month;
+  let dayPillarDay = day;
   if (calcHour === 23) {
     const tempDate = new Date(year, month - 1, day);
     tempDate.setDate(tempDate.getDate() + 1);
-    finalYear = tempDate.getFullYear();
-    finalMonth = tempDate.getMonth() + 1;
-    finalDay = tempDate.getDate();
+    dayPillarYear = tempDate.getFullYear();
+    dayPillarMonth = tempDate.getMonth() + 1;
+    dayPillarDay = tempDate.getDate();
   }
 
-  const yearPillar = calcYearPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute);
-  const monthPillar = calcMonthPillar(finalYear, finalMonth, finalDay, calcHour, calcMinute, yearPillar.stemIdx);
-  const dayPillar = calcDayPillar(finalYear, finalMonth, finalDay);
+  const yearPillar = calcYearPillar(year, month, day, calcHour, calcMinute);
+  const monthPillar = calcMonthPillar(year, month, day, calcHour, calcMinute, yearPillar.stemIdx);
+  const dayPillar = calcDayPillar(dayPillarYear, dayPillarMonth, dayPillarDay);
   const hourPillar = hourUnknown ? null : calcHourPillar(hourBranchIdx, dayPillar.stemIdx);
 
   const elementCounts = calcElementCounts(
