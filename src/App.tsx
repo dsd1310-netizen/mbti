@@ -18,12 +18,25 @@ import {
   generateElementSummaryDeepInterpretation,
   generateCompatibilitySummaryDeepInterpretation,
   generateAstrologyInterpretation, generateAstrologyDeepInterpretation, AstrologyInterpretation,
+  generateTransitInterpretation, DailyTransitFortune,
+  generateTarotInterpretation,
 } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
-import { calculateAstrology, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
+import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
+import { drawDailyTarotCard } from './data/tarotCards';
+import type { User } from 'firebase/auth';
+
+// 클라우드 동기화(Firebase)는 실제로 필요할 때(로그인 여부 확인/로그인 시도)만 동적으로 불러온다.
+// Firebase SDK가 번들 크기를 크게 키우기 때문에(약 260KB→1MB), 로그인 기능을 쓰지 않는
+// 대다수 사용자의 초기 로딩 속도에 영향이 가지 않도록 하기 위함.
+let cloudSyncModulePromise: Promise<typeof import('./utils/cloudSync')> | null = null;
+function loadCloudSync() {
+  if (!cloudSyncModulePromise) cloudSyncModulePromise = import('./utils/cloudSync');
+  return cloudSyncModulePromise;
+}
 
 // ─── 나풀이 심볼 (크리스탈볼 속 별) — 헤더 로고에 사용 ────────────────────
 function NapuliMark({ size = 26 }: { size?: number }) {
@@ -244,6 +257,12 @@ function todayDateStr(): string {
 function dailyFortuneCacheKey(f: CacheKeyBase, dateStr: string): string {
   return `saju_daily_${baseKeyId(f)}_${dateStr}`;
 }
+function transitCacheKey(f: FormData, city: string, dateStr: string): string {
+  return `saju_transit_${astrologyCacheKey(f, city)}_${dateStr}`;
+}
+function tarotCacheKey(f: CacheKeyBase, dateStr: string): string {
+  return `saju_tarot_${baseKeyId(f)}_${dateStr}`;
+}
 
 // Gemini API 키는 사용자에게 노출/입력받지 않고 내장 키만 사용합니다.
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
@@ -271,6 +290,10 @@ export default function App() {
   const [result, setResult] = useState<AppResult | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [diaryDetail, setDiaryDetail] = useState<Bookmark | null>(null);
+  // 클라우드 동기화(선택 기능) — 로그인하지 않아도 위 bookmarks/localStorage만으로 완전히 동작함
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [cloudSyncLoading, setCloudSyncLoading] = useState(false);
+  const [cloudSyncAvailable, setCloudSyncAvailable] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [introError, setIntroError] = useState<string | null>(null);
   const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
@@ -318,6 +341,14 @@ export default function App() {
   const [astrologyDeepText, setAstrologyDeepText] = useState<string | null>(null);
   const [astrologyDeepLoading, setAstrologyDeepLoading] = useState(false);
 
+  // 🔮 오늘의 트랜짓 운세
+  const [transitData, setTransitData] = useState<DailyTransitFortune | null>(null);
+  const [transitLoading, setTransitLoading] = useState(false);
+
+  // 🃏 오늘의 타로
+  const [tarotData, setTarotData] = useState<string | null>(null);
+  const [tarotLoading, setTarotLoading] = useState(false);
+
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
 
@@ -325,6 +356,50 @@ export default function App() {
     const savedBm = localStorage.getItem('saju_bookmarks');
     if (savedBm) { try { setBookmarks(JSON.parse(savedBm)); } catch {} }
   }, []);
+
+  // 클라우드 동기화(선택 기능): 로그인 상태 구독 + 로그인 시 로컬↔클라우드 다이어리 기록 병합
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    loadCloudSync().then(mod => {
+      setCloudSyncAvailable(mod.cloudSyncAvailable);
+      unsubscribe = mod.subscribeToAuthState(async (user) => {
+        setCurrentUser(user);
+        if (!user) return;
+        setCloudSyncLoading(true);
+        try {
+          const localRaw = localStorage.getItem('saju_bookmarks');
+          const local: Bookmark[] = localRaw ? JSON.parse(localRaw) : [];
+          const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
+          const merged = mod.mergeBookmarks(local, cloud);
+          setBookmarks(merged);
+          localStorage.setItem('saju_bookmarks', JSON.stringify(merged));
+          await mod.pushBookmarksToCloud(user.uid, merged);
+        } catch (err) {
+          console.warn('클라우드 동기화 실패:', err);
+          showToast('클라우드 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        } finally {
+          setCloudSyncLoading(false);
+        }
+      });
+    });
+    return () => { if (unsubscribe) unsubscribe(); };
+  }, []);
+
+  const handleSignIn = async () => {
+    try {
+      const mod = await loadCloudSync();
+      await mod.signInWithGoogle();
+      showToast('로그인되었습니다 ☁️');
+    } catch (err: any) {
+      showToast(`로그인 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    }
+  };
+
+  const handleSignOut = async () => {
+    const mod = await loadCloudSync();
+    await mod.signOutUser();
+    showToast('로그아웃되었습니다');
+  };
 
   // 풍수 수리 가이드 / 운세 해설 캐시 로드
   useEffect(() => {
@@ -381,6 +456,20 @@ export default function App() {
     const cached = localStorage.getItem(dailyFortuneCacheKey(result.formData, todayDateStr()));
     if (cached) { try { setDailyFortuneData(JSON.parse(cached)); } catch { setDailyFortuneData(null); } }
     else { setDailyFortuneData(null); }
+  }, [result]);
+
+  // 🔮 오늘의 트랜짓 운세 캐시 로드 (오늘 날짜 기준)
+  useEffect(() => {
+    if (!result) { setTransitData(null); return; }
+    const cached = localStorage.getItem(transitCacheKey(result.formData, result.formData.birthCity, todayDateStr()));
+    if (cached) { try { setTransitData(JSON.parse(cached)); } catch { setTransitData(null); } }
+    else { setTransitData(null); }
+  }, [result]);
+
+  // 🃏 오늘의 타로 캐시 로드 (오늘 날짜 기준)
+  useEffect(() => {
+    if (!result) { setTarotData(null); return; }
+    setTarotData(localStorage.getItem(tarotCacheKey(result.formData, todayDateStr())));
   }, [result]);
 
   // 사주 4기둥 AI 심층 해설 캐시 로드
@@ -770,6 +859,54 @@ export default function App() {
       return null;
     } finally {
       setAstrologyDeepLoading(false);
+    }
+  };
+
+  // 🔮 오늘의 트랜짓 운세 생성 — 오늘 실제 하늘의 행성 위치를 네이탈 차트와 비교
+  const handleGenerateTransit = async (): Promise<DailyTransitFortune | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setTransitLoading(true);
+    try {
+      const transits = calculateTodayTransits(result.astrologyResult);
+      const data = await generateTransitInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult, transits);
+      setTransitData(data);
+      const dateStr = todayDateStr();
+      localStorage.setItem(transitCacheKey(result.formData, result.formData.birthCity, dateStr), JSON.stringify(data));
+      return data;
+    } catch (err: any) {
+      showToast(`오늘의 트랜짓 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setTransitLoading(false);
+    }
+  };
+
+  // 🃏 오늘의 타로 — 이름+생년월일+오늘 날짜로 결정론적 카드 뽑기(같은 날 다시 눌러도 같은 카드)
+  const handleGenerateTarot = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setTarotLoading(true);
+    try {
+      const dateStr = todayDateStr();
+      const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${dateStr}`;
+      const { card, reversed } = drawDailyTarotCard(seed);
+      const text = await generateTarotInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.formData.mbti, card, reversed);
+      setTarotData(text);
+      localStorage.setItem(tarotCacheKey(result.formData, dateStr), text);
+      addBookmark('오늘의 타로', `${dateStr} 오늘의 타로 · ${card.name}(${reversed ? '역방향' : '정방향'})`, text);
+      return text;
+    } catch (err: any) {
+      showToast(`오늘의 타로 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setTarotLoading(false);
     }
   };
 
@@ -1573,14 +1710,22 @@ export default function App() {
     const updated = [bm, ...bookmarks];
     setBookmarks(updated);
     localStorage.setItem('saju_bookmarks', JSON.stringify(updated));
+    if (currentUser) {
+      const uid = currentUser.uid;
+      loadCloudSync().then(mod => mod.pushBookmarksToCloud(uid, updated)).catch(err => console.warn('클라우드 저장 실패:', err));
+    }
     showToast(`"${title.slice(0, 15)}..." 다이어리에 저장됨 📌`);
-  }, [bookmarks, result]);
+  }, [bookmarks, result, currentUser]);
 
   const removeBookmark = useCallback((id: number) => {
     const updated = bookmarks.filter(b => b.id !== id);
     setBookmarks(updated);
     localStorage.setItem('saju_bookmarks', JSON.stringify(updated));
-  }, [bookmarks]);
+    if (currentUser) {
+      const uid = currentUser.uid;
+      loadCloudSync().then(mod => mod.pushBookmarksToCloud(uid, updated)).catch(err => console.warn('클라우드 저장 실패:', err));
+    }
+  }, [bookmarks, currentUser]);
 
   // 다이어리 항목의 snapshot으로 그 사람의 전체 결과 화면으로 되돌아가기
   // (일반 제출과 동일한 로딩 경로를 그대로 재사용 — 캐시된 AI 콘텐츠는 로딩 useEffect가 자동으로 복원함)
@@ -2379,6 +2524,52 @@ export default function App() {
               )}
             </div>
 
+            {/* 오늘의 타로 (가벼운 재미 콘텐츠) */}
+            <div className="glass-card" style={{ padding: '20px 22px' }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                <div>
+                  <div className="section-label">🃏 오늘의 타로</div>
+                  <div className="section-title" style={{ fontSize: 16 }}>가볍게 즐기는 오늘의 한마디</div>
+                </div>
+                {tarotData && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('오늘의 타로', `${todayDateStr()} 오늘의 타로`, tarotData)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+              {tarotData ? (() => {
+                const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${todayDateStr()}`;
+                const { card, reversed } = drawDailyTarotCard(seed);
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <span style={{ fontSize: 28 }}>{card.emoji}</span>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 15 }}>{card.name} ({reversed ? '역방향' : '정방향'})</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
+                      {tarotData}
+                    </p>
+                  </>
+                );
+              })() : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    오늘의 카드를 한 장 뽑아봐요. 같은 날 다시 눌러도 같은 카드가 나와요.
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateTarot} disabled={tarotLoading}>
+                    {tarotLoading ? <span>✨ 카드를 뽑는 중...</span> : <span>🃏 오늘의 타로 뽑기</span>}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* 오행 분포 */}
             <div className="glass-card animate-slide-up-delay-2">
               <div className="section-label" style={{ marginBottom: 4 }}>🌿 오행 분포</div>
@@ -3163,6 +3354,44 @@ export default function App() {
                 </div>
               )}
 
+              <div className="glass-card-gold animate-slide-up-delay-2">
+                <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                  <div>
+                    <div className="section-label">🔮 오늘의 트랜짓</div>
+                    <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()} · 오늘 하늘이 내 차트에 건네는 말</div>
+                  </div>
+                  {transitData && (
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 11 }}
+                      onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
+                    >
+                      🔖 저장
+                    </button>
+                  )}
+                </div>
+                {transitData ? (
+                  <>
+                    <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
+                      {transitData.analysis}
+                    </p>
+                    <div className="fact-bomb-box">
+                      <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
+                      <div className="fact-bomb-content">{transitData.factBomb}</div>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                      오늘 실제 하늘의 행성이 내 출생 차트와 어떤 각도를 이루는지 살펴봐요.
+                    </p>
+                    <button className="btn-primary" onClick={handleGenerateTransit} disabled={transitLoading}>
+                      {transitLoading ? <span>✨ 살펴보는 중...</span> : <span>🔮 오늘의 트랜짓 보기</span>}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="glass-card animate-slide-up-delay-2">
                 <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
                   <div>
@@ -3261,9 +3490,30 @@ export default function App() {
                 <button className="btn-secondary" onClick={() => setStep(result ? 'result' : 'input')}>← 돌아가기</button>
               </div>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 24 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
               💡 항목을 클릭하면 전체 내용을 볼 수 있고, 기록 당시의 사람이면 전체 결과 화면으로도 되돌아갈 수 있어요.
             </p>
+
+            {cloudSyncAvailable && (
+              <div className="glass-card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                {currentUser ? (
+                  <>
+                    <div style={{ fontSize: 13 }}>
+                      ☁️ <strong>{currentUser.email}</strong>로 기록이 자동 백업되고 있어요
+                      {cloudSyncLoading && <span style={{ color: 'var(--text-secondary)' }}> · 동기화 중...</span>}
+                    </div>
+                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignOut}>로그아웃</button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      ☁️ 로그인하면 기기를 바꿔도 다이어리 기록이 그대로 유지돼요 (로그인 안 해도 지금처럼 계속 사용 가능해요)
+                    </div>
+                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignIn}>구글로 로그인</button>
+                  </>
+                )}
+              </div>
+            )}
 
             {bookmarks.length === 0 ? (
               <div className="bookmark-empty">

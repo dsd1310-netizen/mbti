@@ -6,7 +6,8 @@
 import { ElementCounts, SajuResult, SipsinProfile, SipsinType } from './sajuCalculator';
 import { MBTI_DATA } from '../data/mbtiTypes';
 import { MBTI_DETAILED } from '../data/mbtiDetailed';
-import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey } from './astrologyCalculator';
+import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey, TransitAspect } from './astrologyCalculator';
+import { TarotCard } from '../data/tarotCards';
 
 // 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열 (2026년 최신 모델 기준)
 const MODELS = [
@@ -978,6 +979,101 @@ ${formatAstrologyAspects(result)}
 7. 분량은 15~20줄 이상으로 충분히 길게 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
   return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+}
+
+// ─── 오늘의 트랜짓 운세 ─────────────────────────────────────────
+const NATAL_POINT_LABEL: Record<'sun' | 'moon' | 'ascendant', string> = {
+  sun: '태양', moon: '달', ascendant: '어센던트',
+};
+
+function formatTransits(transits: TransitAspect[]): string {
+  if (transits.length === 0) return '오늘은 오브(허용 범위) 안에 들어오는 주요 트랜짓 애스펙트가 없습니다.';
+  return transits
+    .map(t => {
+      const info = PLANETS.find(p => p.key === t.transitPlanet)!;
+      return `오늘의 ${info.emoji}${info.name} — 네이탈 ${NATAL_POINT_LABEL[t.natalPoint]}: ${t.type}(${t.nature}, 오차 ${t.orb.toFixed(1)}°)`;
+    })
+    .join('\n');
+}
+
+export interface DailyTransitFortune {
+  analysis: string; // 오늘의 트랜짓 기운 설명 + 행동 팁
+  factBomb: string; // 위트있는 팩폭 한줄
+}
+
+export async function generateTransitInterpretation(
+  apiKey: string,
+  name: string,
+  gender: string,
+  natal: AstrologyResult,
+  transits: TransitAspect[],
+): Promise<DailyTransitFortune> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+
+  const prompt = `당신은 서양 고전점성술 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
+아래 ${name}(${genderText}) 님의 출생 차트(네이탈)와, 오늘 실제 하늘의 행성이 그 차트와 이루는 각도(트랜짓)를 바탕으로 [오늘 하루 운세]를 작성해 주세요.
+
+【 네이탈 요약 】
+${formatAstrologySummary(natal)}
+
+【 오늘의 트랜짓 애스펙트 】
+${formatTransits(transits)}
+
+【 작성 지침 】
+1. analysis: 오늘의 트랜짓이 이 사람의 타고난 차트를 자극하는 지점을 짚고, 오늘 하루 어울리는 마음가짐이나 행동 팁 1개를 포함해 존댓말로 2~3문장 작성하세요. 트랜짓 애스펙트가 없다면 "오늘은 특별히 자극받는 지점 없이 평온하게 흘러가는 날"이라는 취지로 자연스럽게 작성하세요.
+2. factBomb: 오늘의 기운을 고려했을 때 이 사람이 실제로 할 법한 행동을 위트 있게 찌르는 팩폭 한 줄(존댓말 매운맛).
+3. 전문용어를 그대로 나열하지 말고 쉬운 비유를 사용하세요.
+4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+
+{
+  "analysis": "오늘의 트랜짓 기운 설명 + 행동 팁 (2~3문장)",
+  "factBomb": "🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄"
+}`;
+
+  const parsed = await callGeminiJsonApi<DailyTransitFortune>(apiKey, prompt, 8192, 45000);
+  return {
+    analysis: cleanField(
+      parsed?.analysis,
+      '오늘의 트랜짓 기운 설명 + 행동 팁 (2~3문장)',
+      '오늘은 타고난 차트가 크게 자극받지 않는, 비교적 평온하게 흘러가는 날입니다. 평소의 리듬을 유지해 보세요.',
+    ),
+    factBomb: cleanField(
+      parsed?.factBomb,
+      '🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄',
+      '🔥 오늘도 하늘은 별말 없는데, 혼자 온갖 의미부여를 하고 계실 것 같네요!',
+    ),
+  };
+}
+
+// ─── 오늘의 타로 ───────────────────────────────────────────────
+export async function generateTarotInterpretation(
+  apiKey: string,
+  name: string,
+  gender: string,
+  mbti: string,
+  card: TarotCard,
+  reversed: boolean,
+): Promise<string> {
+  const genderText = gender === 'male' ? '남성' : '여성';
+  const orientation = reversed ? '역방향' : '정방향';
+  const meaning = reversed ? card.meaningReversed : card.meaningUpright;
+
+  const prompt = `당신은 위트 있고 따뜻한 타로 리더입니다. 이건 진지한 점술이 아니라 가볍게 즐기는 오늘의 한마디 콘텐츠입니다.
+${name}(${genderText}, MBTI ${mbti}) 님이 오늘 뽑은 카드는 [${card.name}(${card.nameEn}) - ${orientation}]입니다.
+
+【 카드 의미 】
+${meaning}
+
+【 작성 지침 】
+1. 이 카드의 의미를 MBTI ${mbti}의 성향과 살짝 엮어서, 오늘 하루에 어울리는 한마디를 존댓말로 2~3문장 작성하세요.
+2. 무겁거나 예언적인 톤이 아니라, 가볍고 유쾌한 톤으로 작성하세요.
+3. 마크다운이나 JSON 없이 일반 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey, prompt,
+    `오늘 뽑으신 카드는 ${card.name}(${orientation})이에요. ${meaning} — 오늘 하루 이 기운을 가볍게 참고해 보세요.`,
+    2048, 30000,
+  );
 }
 
 /**

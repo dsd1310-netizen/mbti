@@ -349,3 +349,44 @@ export function calculateAstrology(
     timeConfidence,
   };
 }
+
+// ─── 오늘의 트랜짓 (현재 행성 위치 vs 네이탈 차트) ────────────────
+export type TransitNatalPoint = 'sun' | 'moon' | 'ascendant';
+
+export interface TransitAspect {
+  transitPlanet: PlanetKey;
+  natalPoint: TransitNatalPoint;
+  type: AspectType;
+  nature: '길각' | '흉각' | '중립';
+  orb: number;
+}
+
+// 목성/토성처럼 느리게 움직이는 행성은 하루 단위로는 거의 변화가 없어 "오늘의" 트랜짓에서 제외.
+const TRANSIT_PLANETS: PlanetKey[] = ['sun', 'moon', 'mercury', 'venus', 'mars'];
+
+/** 오늘(또는 지정 시각)의 실제 행성 위치를 네이탈 차트의 태양·달·어센던트와 비교해 애스펙트를 구함 */
+export function calculateTodayTransits(natal: AstrologyResult, now: Date = new Date()): TransitAspect[] {
+  const natalSun = natal.planets.find(p => p.key === 'sun')!;
+  const natalMoon = natal.planets.find(p => p.key === 'moon')!;
+  const natalPoints: { key: TransitNatalPoint; longitude: number }[] = [
+    { key: 'sun', longitude: natalSun.longitude },
+    { key: 'moon', longitude: natalMoon.longitude },
+    { key: 'ascendant', longitude: natal.ascendantLongitude },
+  ];
+
+  const results: TransitAspect[] = [];
+  for (const tKey of TRANSIT_PLANETS) {
+    const tLon = getGeocentricLongitude(tKey, now);
+    for (const np of natalPoints) {
+      const diff = angularDiff(tLon, np.longitude);
+      for (const { type, angle, nature } of ASPECT_ANGLES) {
+        const orb = Math.abs(diff - angle);
+        if (orb <= ASPECT_ORB) {
+          results.push({ transitPlanet: tKey, natalPoint: np.key, type, nature, orb });
+          break;
+        }
+      }
+    }
+  }
+  return results;
+}
