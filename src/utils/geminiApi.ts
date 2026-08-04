@@ -1036,7 +1036,14 @@ async function callGeminiPlainApi(
         const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
           ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
-        return rawText.trim();
+        if (rawText.trim()) {
+          return rawText.trim();
+        }
+
+        // 응답은 정상 수신했지만 콘텐츠가 비어있음(세이프티 필터 등) — 네트워크 오류와 동일하게 재시도
+        const finishReason = (data as { candidates?: { finishReason?: string }[] })?.candidates?.[0]?.finishReason;
+        console.warn(`[GeminiAPI] ${model} 빈 응답 (finishReason: ${finishReason ?? '알 수 없음'}). ${attempt}/${maxRetries}회 재시도...`);
+        lastError = new Error('AI가 빈 응답을 반환했습니다.');
       } catch (err: any) {
         clearTimeout(timeoutId);
         lastError = err;

@@ -227,12 +227,15 @@ function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
 function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
   return `saju_pillar_${key}_${baseKeyId(f)}`;
 }
-// 서양점성술은 출생 도시(좌표)에 따라 하우스·어센던트가 달라지므로 baseKeyId에 도시명을 추가로 반영
-function astrologyCacheKey(f: CacheKeyBase, city: string): string {
-  return `saju_astrology_${baseKeyId(f)}_${city}`;
+// 서양점성술은 출생 도시(좌표)에 따라 하우스·어센던트가 달라지므로 baseKeyId에 도시명을 추가로 반영.
+// baseKeyId의 birthBranch는 2시간 단위 시진까지만 구분하지만, 정확한 시:분 입력 시
+// 어센던트는 분 단위로 계속 이동하므로 exactTime을 추가로 반영해 캐시가 섞이지 않게 함.
+function astrologyCacheKey(f: FormData, city: string): string {
+  const exactTime = f.useExactTime && !f.hourUnknown ? `_${f.exactHour}:${f.exactMinute}` : '';
+  return `saju_astrology_${baseKeyId(f)}_${city}${exactTime}`;
 }
-function astrologyDeepCacheKey(f: CacheKeyBase, city: string): string {
-  return `saju_astrology_${baseKeyId(f)}_${city}_deep`;
+function astrologyDeepCacheKey(f: FormData, city: string): string {
+  return `${astrologyCacheKey(f, city)}_deep`;
 }
 function todayDateStr(): string {
   const d = new Date();
@@ -1231,7 +1234,7 @@ export default function App() {
             <h2>🧠 MBTI 유형카드</h2>
             <div class="report-block">
               <h3>${mbtiInfo.emoji} ${escapeHtml(result.formData.mbti)} · ${mbtiInfo.nickname}</h3>
-              <p>${mbtiInfo.coreTrait}</p>
+              <p>${escapeHtml(mbtiInfo.coreTrait)}</p>
               <p class="lucky-item">⭐ 일간(${saju.dayStem}) 기운과 만나면 ${ELEMENT_LABELS[saju.dayStemElement].ko}의 기질이 더해져 ${mbtiInfo.nickname} 특유의 성향이 한층 더 입체적으로 발현됩니다.</p>
             </div>
           </div>
@@ -2062,7 +2065,7 @@ export default function App() {
                       style={{ flex: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', padding: '12px' }}
                       onClick={() => setFormData(prev => ({ ...prev, gender: g.val }))}
                     >
-                      <span className={`hour-btn-name ${formData.gender === g.val ? '' : ''}`}>{g.label}</span>
+                      <span className="hour-btn-name">{g.label}</span>
                     </button>
                   ))}
                 </div>
@@ -2312,7 +2315,7 @@ export default function App() {
             </div>
 
             {/* 결과 화면 섹션 탭 */}
-            <div className="tab-nav section-tab-nav">
+            <div className="tab-nav section-tab-nav" role="tablist" aria-label="결과 섹션">
               {[
                 { id: 'fortune', label: '🌌 운세' },
                 { id: 'ai', label: '🔮 나풀이 해석' },
@@ -2323,6 +2326,8 @@ export default function App() {
                 <button
                   key={t.id}
                   type="button"
+                  role="tab"
+                  aria-selected={activeSection === t.id}
                   className={`tab-btn ${activeSection === t.id ? 'active' : ''}`}
                   onClick={() => setActiveSection(t.id as any)}
                 >
@@ -2807,7 +2812,7 @@ export default function App() {
                   </div>
 
                   {/* 탭 네비게이션 */}
-                  <div className="tab-nav">
+                  <div className="tab-nav" role="tablist" aria-label="나풀이 해석 카테고리">
                     {[
                       { id: 'personality', label: '🌟 성격 진단', icon: '🌶️' },
                       { id: 'career', label: '💼 커리어/재물', icon: '💼' },
@@ -2818,6 +2823,8 @@ export default function App() {
                       <button
                         key={t.id}
                         type="button"
+                        role="tab"
+                        aria-selected={activeTab === t.id}
                         className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
                         onClick={() => setActiveTab(t.id as any)}
                       >
@@ -3274,7 +3281,7 @@ export default function App() {
                       <div className="bookmark-content">{bm.content}</div>
                       <div className="bookmark-date">{bm.date}</div>
                     </div>
-                    <button className="btn-delete" onClick={(e) => { e.stopPropagation(); removeBookmark(bm.id); }}>🗑</button>
+                    <button className="btn-delete" aria-label="기록 삭제" onClick={(e) => { e.stopPropagation(); removeBookmark(bm.id); }}>🗑</button>
                   </div>
                 ))}
               </div>

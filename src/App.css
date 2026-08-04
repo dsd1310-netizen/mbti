@@ -540,42 +540,6 @@ body {
   color: var(--gold);
 }
 
-/* ── API 키 입력 ─────────────────────────────────── */
-.api-key-section {
-  background: rgba(245, 200, 66, 0.04);
-  border: 1px solid rgba(245, 200, 66, 0.15);
-  border-radius: 16px;
-  padding: 18px 20px;
-}
-.api-key-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.api-key-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--gold);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.api-key-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 6px;
-  line-height: 1.5;
-}
-.api-key-link {
-  color: var(--purple-light);
-  text-decoration: none;
-  font-weight: 600;
-}
-.api-key-link:hover { color: var(--gold); }
-
 /* ── 히어로 섹션 ─────────────────────────────────── */
 .hero {
   text-align: center;
@@ -767,56 +731,6 @@ body {
   background: linear-gradient(180deg, var(--bg-deep) 70%, rgba(5, 5, 16, 0));
 }
 
-/* ── AI 해석 카드 ───────────────────────────────── */
-.ai-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 22px;
-  transition: all 0.3s;
-  cursor: pointer;
-}
-.ai-card:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  background: var(--bg-card-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 30, 0.5);
-}
-.ai-card-icon {
-  width: 40px; height: 40px;
-  border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px;
-  margin-bottom: 12px;
-}
-.ai-card-category {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-.ai-card-title {
-  font-family: 'Noto Serif KR', serif;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 10px;
-}
-.ai-card-content {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.75;
-}
-.ai-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(100, 80, 200, 0.15);
-}
-
 /* ── 로딩 화면 ───────────────────────────────────── */
 .loading-screen {
   display: flex;
@@ -1002,29 +916,6 @@ body {
   line-height: 1.6;
 }
 
-/* ── AI 해석 로딩 ────────────────────────────────── */
-.ai-loading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px;
-  background: rgba(139, 92, 246, 0.05);
-  border: 1px solid rgba(139, 92, 246, 0.15);
-  border-radius: 16px;
-}
-.ai-loading-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--purple);
-  animation: dot-bounce 1.4s infinite;
-}
-.ai-loading-dot:nth-child(2) { animation-delay: 0.2s; background: var(--gold); }
-.ai-loading-dot:nth-child(3) { animation-delay: 0.4s; background: var(--pink); }
-@keyframes dot-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-8px); opacity: 1; }
-}
-
 /* ── 보관함 화면 ─────────────────────────────────── */
 .bookmark-empty {
   text-align: center;
@@ -1122,15 +1013,6 @@ body {
 @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (max-width: 480px) { .grid-3 { grid-template-columns: 1fr; } }
-.ai-cards-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-@media (min-width: 600px) {
-  .ai-cards-grid { grid-template-columns: 1fr 1fr; }
-}
-
 .divider {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(120, 100, 255, 0.2), transparent);
@@ -1269,66 +1151,6 @@ body {
   line-height: 1.7;
 }
 
-.report-tab-btn {
-  border: 1px solid var(--border);
-  background: rgba(15, 18, 50, 0.6);
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.report-tab-btn:hover {
-  background: rgba(139, 92, 246, 0.2);
-  color: var(--text-primary);
-  border-color: rgba(139, 92, 246, 0.4);
-}
-.report-tab-btn.active {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.4) 0%, rgba(236, 72, 153, 0.3) 100%);
-  color: var(--gold-light);
-  border-color: var(--gold);
-  box-shadow: 0 4px 15px rgba(245, 200, 66, 0.25);
-  transform: translateY(-2px);
-}
-
-/* ── 팩폭 불꽃 카드 ──────────────────────────────── */
-.fire-factbomb-box {
-  margin-top: 16px;
-  padding: 16px 20px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(249, 115, 22, 0.15) 100%);
-  border: 1px solid rgba(249, 115, 22, 0.5);
-  box-shadow: 0 0 15px rgba(249, 115, 22, 0.15);
-  position: relative;
-  overflow: hidden;
-}
-.fire-factbomb-box::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #ef4444, #f97316, #eab308);
-}
-.fire-factbomb-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 800;
-  font-size: 15px;
-  color: #ff7e5f;
-  margin-bottom: 8px;
-}
-.fire-factbomb-text {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #ffe3d8;
-  font-weight: 500;
-}
-
 /* ── 럭키 아이템 박스 ────────────────────────────── */
 .lucky-item-box {
   margin-top: 12px;
@@ -1353,22 +1175,6 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   transition: all 0.2s;
 }
-.prescription-item {
-  padding: 16px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border-left: 4px solid var(--gold);
-  font-size: 15px;
-  line-height: 1.7;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  transition: all 0.2s ease;
-}
-.prescription-item:hover {
-  background: rgba(245, 200, 66, 0.08);
-  transform: translateX(4px);
-}
-
 /* ── 스크롤바 ────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

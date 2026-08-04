@@ -162,8 +162,8 @@ export function getMonthBranchIdx(year: number, month: number, day: number, hour
   const yearData = SOLAR_TERMS[year];
   
   if (!yearData) {
-    // 데이터 없는 연도는 간략 계산
-    return ((month + 1) % 12);
+    // 데이터 없는 연도는 간략 계산 (SOLAR_TERMS_BRANCH_IDX[month-1]와 동일한 규칙: month % 12)
+    return (month % 12);
   }
 
   // 해당 월의 절기 인덱스 (0=소한/1월절, 1=입춘/2월절, ...)
@@ -172,7 +172,7 @@ export function getMonthBranchIdx(year: number, month: number, day: number, hour
   const termEntry = yearData[termIdx];
 
   if (!termEntry) {
-    return ((month + 1) % 12);
+    return (month % 12);
   }
 
   // 절기 입절 여부 판단 (해당 날짜/시각이 절기 이전인지 이후인지)
