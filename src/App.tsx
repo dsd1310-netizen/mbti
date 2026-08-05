@@ -95,7 +95,9 @@ interface Bookmark {
   date: string;
   snapshot?: FormData; // 저장 당시의 입력값 — 전체 결과 화면으로 되돌아갈 때 사용
 }
-type Step = 'input' | 'loading' | 'result' | 'bookmarks';
+type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
+
+const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
 type PillarKey = 'year' | 'month' | 'day' | 'hour';
 
 const MBTI_LIST = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
@@ -277,7 +279,7 @@ const GEMINI_API_KEY = 'server-managed';
 
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
-  const [step, setStep] = useState<Step>('input');
+  const [step, setStep] = useState<Step>(() => (localStorage.getItem(ONBOARDING_SEEN_KEY) ? 'input' : 'onboarding'));
   const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
   const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
@@ -2031,6 +2033,11 @@ export default function App() {
     // 의존성 배열에 명시 — 로딩 중 재실행은 없음(참조가 바뀌지 않으므로).
   }, [step, formData]);
 
+  const handleFinishOnboarding = () => {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+    setStep('input');
+  };
+
   const handleReset = () => {
     setStep('input');
     setResult(null);
@@ -2227,6 +2234,48 @@ export default function App() {
 
       {/* 메인 */}
       <main className="main-container">
+
+        {/* ── 온보딩 화면(최초 1회만) ───────────────── */}
+        {step === 'onboarding' && (
+          <div className="animate-fade-in" style={{ paddingTop: 32 }}>
+            <div className="hero">
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <NapuliMark size={56} />
+              </div>
+              <h1 className="hero-title">
+                동양의 사주부터<br />
+                <span className="hero-title-accent">서양 별자리·타로까지</span>
+              </h1>
+              <p className="hero-desc">
+                생년월일 하나로 나풀이가 여러 관점을 한곳에 모아<br />
+                당신을 이야기처럼 풀어드려요.
+              </p>
+            </div>
+
+            <div className="space-y-4" style={{ margin: '28px 0' }}>
+              {[
+                { emoji: '🔮', title: '사주 × MBTI 융합 해석', desc: '정밀 만세력으로 산출한 사주원국을 MBTI와 엮어 성격·커리어·연애·재물까지' },
+                { emoji: '🪐', title: '서양 점성술 + 🃏 타로', desc: '어센던트·행성·하우스는 물론, 78장 정식 타로 덱으로 매일 새로운 카드까지' },
+                { emoji: '💑', title: '궁합 & 🏡 풍수', desc: '띠 기반 궁합은 물론 상대방 실제 생년월일로 정밀 궁합까지 비교' },
+                { emoji: '✨', title: '매일 새로워지는 오늘', desc: '오늘의 나풀이·트랜짓·타로가 하루하루 다르게 도착해요' },
+              ].map((item) => (
+                <div key={item.title} className="glass-card" style={{ padding: '16px 18px', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                  <span style={{ fontSize: 26 }}>{item.emoji}</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={handleFinishOnboarding}>
+              <span>✨</span>
+              <span>시작하기</span>
+              <span>→</span>
+            </button>
+          </div>
+        )}
 
         {/* ── 입력 화면 ───────────────────────────── */}
         {step === 'input' && (
