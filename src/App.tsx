@@ -272,7 +272,8 @@ const GEMINI_API_KEY = 'server-managed';
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
   const [step, setStep] = useState<Step>('input');
-  const [activeSection, setActiveSection] = useState<'today' | 'fortune' | 'ai' | 'compat' | 'fengshui' | 'astrology'>('fortune');
+  const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
+  const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -1939,7 +1940,8 @@ export default function App() {
     setStep('input');
     setResult(null);
     setIntroError(null);
-    setActiveSection('fortune');
+    setActiveSection('saju');
+    setActiveSajuTab('fortune');
     setActiveTab('personality');
     setCategoryAnswers({});
   };
@@ -2488,14 +2490,11 @@ export default function App() {
               </div>
             </div>
 
-            {/* 결과 화면 섹션 탭 */}
+            {/* 결과 화면 대분류 탭 */}
             <div className="tab-nav section-tab-nav" role="tablist" aria-label="결과 섹션">
               {[
                 { id: 'today', label: '✨ 오늘' },
-                { id: 'fortune', label: '🌌 운세' },
-                { id: 'ai', label: '🔮 나풀이 해석' },
-                { id: 'compat', label: '💑 궁합' },
-                { id: 'fengshui', label: '🏡 풍수' },
+                { id: 'saju', label: '🔮 사주' },
                 { id: 'astrology', label: '🪐 별자리' },
               ].map(t => (
                 <button
@@ -2510,6 +2509,29 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            {/* 🔮 사주 대분류 안의 서브탭(운세/해석/궁합/풍수) */}
+            {activeSection === 'saju' && (
+              <div className="tab-nav" role="tablist" aria-label="사주 세부 메뉴" style={{ marginBottom: 20 }}>
+                {[
+                  { id: 'fortune', label: '🌌 운세' },
+                  { id: 'ai', label: '🔍 해석' },
+                  { id: 'compat', label: '💑 궁합' },
+                  { id: 'fengshui', label: '🏡 풍수' },
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSajuTab === t.id}
+                    className={`tab-btn ${activeSajuTab === t.id ? 'active' : ''}`}
+                    onClick={() => setActiveSajuTab(t.id as any)}
+                  >
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* ✨ 오늘: 오늘의 나풀이 + 오늘의 타로 + 오늘의 트랜짓 — 매일 새로 보는 콘텐츠 3종을 한곳에 모음 */}
             {activeSection === 'today' && (
@@ -2641,8 +2663,11 @@ export default function App() {
             </div>
             )}
 
+            {/* 🔮 사주 대분류: 운세 / 해석 / 궁합 / 풍수 (서브탭으로 전환) */}
+            {activeSection === 'saju' && (<>
+
             {/* 운세: 오행 분포 + 시주 정보 + 대운/세운 */}
-            {activeSection === 'fortune' && (
+            {activeSajuTab === 'fortune' && (
             <div className="space-y-6 animate-fade-in">
 
             {/* 오행 분포 */}
@@ -2875,7 +2900,7 @@ export default function App() {
             )}
 
             {/* 궁합 조합표 */}
-            {activeSection === 'compat' && dayBranchRelations && (
+            {activeSajuTab === 'compat' && dayBranchRelations && (
               <div className="space-y-6 animate-fade-in">
               <div className="glass-card animate-slide-up-delay-2">
                 <div className="section-label" style={{ marginBottom: 4 }}>💑 궁합 가이드</div>
@@ -3013,7 +3038,7 @@ export default function App() {
             )}
 
             {/* AI 해석 */}
-            {activeSection === 'ai' && (
+            {activeSajuTab === 'ai' && (
             <div className="animate-slide-up-delay-3">
               <div className="section-label" style={{ marginBottom: 8 }}>🔮 나풀이 심층 해석</div>
               <div className="section-title" style={{ marginBottom: 16 }}>사주 × {result.formData.mbti} 융합 분석</div>
@@ -3277,7 +3302,7 @@ export default function App() {
             )}
 
             {/* 풍수 수리 가이드 */}
-            {activeSection === 'fengshui' && (
+            {activeSajuTab === 'fengshui' && (
             <div className="glass-card animate-slide-up-delay-4">
               <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
                 <div>
@@ -3343,6 +3368,8 @@ export default function App() {
               )}
             </div>
             )}
+
+            </>)}
 
             {/* 🪐 별자리 (서양 고전점성술, 홀사인) */}
             {activeSection === 'astrology' && (
