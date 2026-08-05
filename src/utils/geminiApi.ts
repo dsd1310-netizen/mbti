@@ -8,6 +8,7 @@ import { MBTI_DATA } from '../data/mbtiTypes';
 import { MBTI_DETAILED } from '../data/mbtiDetailed';
 import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey, TransitAspect } from './astrologyCalculator';
 import { TarotCard } from '../data/tarotCards';
+import { PairCompatibilityResult, STEM_RELATION_LABEL } from './pairCompatibility';
 
 // 모델 과부하 및 트래픽 분산을 위한 릴레이 모델 배열 (2026년 최신 모델 기준)
 const MODELS = [
@@ -586,6 +587,56 @@ export async function generateCompatibilitySummaryInterpretation(
     apiKey,
     prompt,
     '전반적으로 무난한 궁합 흐름을 가지고 있습니다. 잘 맞는 상대와는 편안한 관계를, 안 맞는 상대와는 적당한 거리를 유지하면 좋습니다.'
+  );
+}
+
+/**
+ * 실제 두 사람의 사주를 비교한 정밀 궁합 해설 — 띠 기반 정적 궁합과 달리
+ * 두 사람이 각각 입력한 생년월일로 산출한 진짜 일주(일간+일지) 비교 결과를 바탕으로 작성.
+ */
+export async function generatePairCompatibilityInterpretation(
+  apiKey: string,
+  nameA: string,
+  genderA: string,
+  sajuA: SajuResult,
+  nameB: string,
+  genderB: string,
+  sajuB: SajuResult,
+  compare: PairCompatibilityResult,
+): Promise<string> {
+  const genderTextA = genderA === 'male' ? '남성' : '여성';
+  const genderTextB = genderB === 'male' ? '남성' : '여성';
+  const elementNames = { wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)' } as const;
+
+  const prompt = `당신은 명리학 궁합 전문가입니다. 아래는 실제 두 사람의 사주(생년월일 기반)를 서로 비교한 정밀 궁합 데이터입니다.
+한자 용어를 몰라도 이해할 수 있는 [정밀 궁합 해설]을 작성해 주세요.
+
+【 ${nameA}(${genderTextA}) 님 】
+- 일주(본질): ${sajuA.dayPillar.hanjaText}(${sajuA.dayPillar.text})
+- 일간 오행: ${elementNames[sajuA.dayStemElement as keyof typeof elementNames]}
+
+【 ${nameB}(${genderTextB}) 님 】
+- 일주(본질): ${sajuB.dayPillar.hanjaText}(${sajuB.dayPillar.text})
+- 일간 오행: ${elementNames[sajuB.dayStemElement as keyof typeof elementNames]}
+
+【 두 사람의 관계 분석 】
+- 일지(日支) 관계: ${compare.dayBranchRelations.length > 0 ? compare.dayBranchRelations.join(', ') : '특별한 합충형파해 없음(무난한 관계)'}
+- 일간(日干) 오행 관계: ${STEM_RELATION_LABEL[compare.dayStemRelation]}
+- ${nameA} 님에게 부족하고 ${nameB} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.aNeedsFromB.length > 0 ? compare.aNeedsFromB.map(e => elementNames[e as keyof typeof elementNames]).join(', ') : '없음'}
+- ${nameB} 님에게 부족하고 ${nameA} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.bNeedsFromA.length > 0 ? compare.bNeedsFromA.map(e => elementNames[e as keyof typeof elementNames]).join(', ') : '없음'}
+
+【 작성 지침 】
+1. 일지 관계(합/충/형/파/해)가 있다면 그게 두 사람 관계에서 실제로 어떻게 드러나는지 구체적인 상황 예시를 들어 설명하세요. 없다면 "특별히 부딪히거나 강하게 끌리는 지점은 없는, 잔잔하고 무난한 관계"라는 취지로 설명하세요.
+2. 일간 오행 관계(생/극/비화)를 바탕으로 누가 누구를 챙기고 이끄는 흐름인지, 그게 관계에서 어떻게 나타날 수 있는지 설명하세요.
+3. 서로의 부족한 오행을 채워주는 지점이 있다면, 그게 실생활에서 어떤 시너지로 나타날 수 있는지 짚어주세요.
+4. 한자 용어를 그대로 나열하지 말고 쉬운 비유를 사용하세요.
+5. 전체 8~12줄 분량의 친근하고 유쾌한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    `${nameA} 님과 ${nameB} 님은 서로 다른 기운이 만나 배울 점이 많은 관계입니다. 크게 부딪힐 지점은 없으니, 서로의 속도를 존중하면서 관계를 만들어가 보세요.`,
+    8192, 45000,
   );
 }
 

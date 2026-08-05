@@ -20,6 +20,7 @@ import {
   generateAstrologyInterpretation, generateAstrologyDeepInterpretation, AstrologyInterpretation,
   generateTransitInterpretation, DailyTransitFortune,
   generateTarotInterpretation,
+  generatePairCompatibilityInterpretation,
 } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
@@ -27,6 +28,7 @@ import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
 import { drawDailyTarotCard } from './data/tarotCards';
+import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification } from './utils/notifications';
 import type { User } from 'firebase/auth';
 
@@ -264,6 +266,9 @@ function transitCacheKey(f: FormData, city: string, dateStr: string): string {
 function tarotCacheKey(f: CacheKeyBase, dateStr: string): string {
   return `saju_tarot_${baseKeyId(f)}_${dateStr}`;
 }
+function pairCompatCacheKey(f: CacheKeyBase, partnerName: string, partnerBirthYear: string, partnerBirthMonth: string, partnerBirthDay: string, partnerGender: string): string {
+  return `saju_paircompat_${baseKeyId(f)}_${partnerName}_${partnerBirthYear}${partnerBirthMonth}${partnerBirthDay}_${partnerGender}`;
+}
 
 // Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
 // 아래 값은 실제 키가 아니라, 기존 코드 전반의 `if (!GEMINI_API_KEY)` 활성화 여부 검사를
@@ -355,6 +360,18 @@ export default function App() {
   // 🃏 오늘의 타로
   const [tarotData, setTarotData] = useState<string | null>(null);
   const [tarotLoading, setTarotLoading] = useState(false);
+
+  // 💑 정밀 궁합(실제 2인 비교) — 상대방 정보 입력
+  const [partnerFormOpen, setPartnerFormOpen] = useState(false);
+  const [partnerName, setPartnerName] = useState('');
+  const [partnerBirthYear, setPartnerBirthYear] = useState('');
+  const [partnerBirthMonth, setPartnerBirthMonth] = useState('');
+  const [partnerBirthDay, setPartnerBirthDay] = useState('');
+  const [partnerGender, setPartnerGender] = useState('female');
+  const [pairSajuB, setPairSajuB] = useState<SajuResult | null>(null);
+  const [pairCompare, setPairCompare] = useState<PairCompatibilityResult | null>(null);
+  const [pairCompatText, setPairCompatText] = useState<string | null>(null);
+  const [pairCompatLoading, setPairCompatLoading] = useState(false);
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
@@ -952,6 +969,61 @@ export default function App() {
       return null;
     } finally {
       setTarotLoading(false);
+    }
+  };
+
+  // 💑 정밀 궁합(실제 2인 비교) — 상대방 생년월일로 실제 사주를 산출해 비교
+  const handleComparePair = async () => {
+    if (!result) return;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    if (!partnerName.trim()) { showToast('상대방 이름을 입력해 주세요!'); return; }
+    const py = parseInt(partnerBirthYear);
+    const pm = parseInt(partnerBirthMonth);
+    const pd = parseInt(partnerBirthDay);
+    if (!py || !pm || !pd) { showToast('상대방 생년월일을 모두 입력해 주세요!'); return; }
+    const parsedDate = new Date(py, pm - 1, pd);
+    const isRealDate = parsedDate.getFullYear() === py && parsedDate.getMonth() === pm - 1 && parsedDate.getDate() === pd;
+    if (!isRealDate) { showToast('상대방의 생년월일이 존재하지 않는 날짜예요. 다시 확인해 주세요!'); return; }
+
+    setPairCompatLoading(true);
+    try {
+      const sajuB = calculateSaju(py, pm, pd, '오시', partnerGender, true);
+      const compare = comparePillars(result.sajuResult, sajuB);
+      setPairSajuB(sajuB);
+      setPairCompare(compare);
+
+      // 같은 상대와 이미 비교해본 적 있으면 캐시를 재사용(API 재호출 없이 바로 표시)
+      const cacheKey = pairCompatCacheKey(result.formData, partnerName, partnerBirthYear, partnerBirthMonth, partnerBirthDay, partnerGender);
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed?.text) {
+            setPairCompatText(parsed.text);
+            return;
+          }
+        } catch { /* 캐시 파싱 실패 시 새로 생성 */ }
+      }
+
+      const text = await generatePairCompatibilityInterpretation(
+        GEMINI_API_KEY,
+        result.formData.name, result.formData.gender, result.sajuResult,
+        partnerName, partnerGender, sajuB,
+        compare,
+      );
+      setPairCompatText(text);
+      localStorage.setItem(
+        pairCompatCacheKey(result.formData, partnerName, partnerBirthYear, partnerBirthMonth, partnerBirthDay, partnerGender),
+        JSON.stringify({ text, sajuB, compare }),
+      );
+      addBookmark('정밀 궁합', `${result.formData.name}님 × ${partnerName}님 정밀 궁합`, text);
+    } catch (err: any) {
+      showToast(`정밀 궁합 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setPairCompatLoading(false);
     }
   };
 
@@ -3072,6 +3144,86 @@ export default function App() {
                       {compatSummaryLoading ? <span>✨ 생성 중...</span> : <span>🔮 궁합 종합 해설 생성하기</span>}
                     </button>
                   </div>
+                )}
+              </div>
+
+              {/* 💑 정밀 궁합 (실제 두 사람 사주 비교) */}
+              <div className="glass-card-gold animate-slide-up-delay-2">
+                <div className="section-label">💑 정밀 궁합</div>
+                <div className="section-title" style={{ marginBottom: 12 }}>상대방의 실제 생년월일로 두 사람 사주 비교</div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                  위의 띠 궁합은 일반적인 경향이고, 상대방의 실제 생년월일을 입력하면 두 사람의 진짜 일주(日柱)를 서로 비교한 정밀 궁합을 볼 수 있어요.
+                </p>
+                {!partnerFormOpen && !pairCompatText && (
+                  <button className="btn-primary" onClick={() => setPartnerFormOpen(true)}>
+                    + 상대방 입력하고 정밀 궁합 보기
+                  </button>
+                )}
+                {partnerFormOpen && !pairCompatText && (
+                  <div className="space-y-4">
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder="상대방 이름 (또는 닉네임)"
+                      value={partnerName}
+                      onChange={(e) => setPartnerName(e.target.value)}
+                    />
+                    <div className="grid-3">
+                      <input className="form-input" type="number" placeholder="연도" min="1930" max="2030" value={partnerBirthYear} onChange={(e) => setPartnerBirthYear(e.target.value)} />
+                      <input className="form-input" type="number" placeholder="월" min="1" max="12" style={{ textAlign: 'center' }} value={partnerBirthMonth} onChange={(e) => setPartnerBirthMonth(e.target.value)} />
+                      <input className="form-input" type="number" placeholder="일" min="1" max="31" style={{ textAlign: 'center' }} value={partnerBirthDay} onChange={(e) => setPartnerBirthDay(e.target.value)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      {[{ val: 'female', label: '🌸 여성' }, { val: 'male', label: '🌊 남성' }].map(g => (
+                        <button
+                          key={g.val}
+                          type="button"
+                          className={`hour-btn ${partnerGender === g.val ? 'selected' : ''}`}
+                          style={{ flex: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', padding: '12px' }}
+                          onClick={() => setPartnerGender(g.val)}
+                        >
+                          <span className="hour-btn-name">{g.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button className="btn-primary" onClick={handleComparePair} disabled={pairCompatLoading}>
+                      {pairCompatLoading ? <span>✨ 비교하는 중...</span> : <span>💑 정밀 궁합 보기</span>}
+                    </button>
+                  </div>
+                )}
+                {pairCompatText && pairSajuB && pairCompare && (
+                  <>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{result.formData.name}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{result.sajuResult.dayPillar.hanjaText}({result.sajuResult.dayPillar.text})</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{partnerName}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{pairSajuB.dayPillar.hanjaText}({pairSajuB.dayPillar.text})</div>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 11, color: 'var(--gold)', marginBottom: 10 }}>
+                      일지 관계: {pairCompare.dayBranchRelations.length > 0 ? pairCompare.dayBranchRelations.join(', ') : '해당 없음(무난)'}
+                    </p>
+                    <div className="deep-analysis-text">{pairCompatText}</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-secondary"
+                        style={{ fontSize: 12 }}
+                        onClick={() => addBookmark('정밀 궁합', `${result.formData.name}님 × ${partnerName}님 정밀 궁합`, pairCompatText)}
+                      >
+                        🔖 저장
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        style={{ fontSize: 12 }}
+                        onClick={() => { setPairCompatText(null); setPairSajuB(null); setPairCompare(null); setPartnerFormOpen(true); }}
+                      >
+                        🔄 다른 상대와 다시 보기
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
               </div>

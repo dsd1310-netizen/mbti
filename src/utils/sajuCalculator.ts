@@ -103,9 +103,9 @@ export type SipsinType =
   | '비견' | '겁재' | '식신' | '상관' | '편재' | '정재' | '편관' | '정관' | '편인' | '정인';
 
 // 오행 상생(내가 생하는 대상): 목→화→토→금→수→목
-const ELEMENT_GENERATES: Record<string, string> = { wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood' };
+export const ELEMENT_GENERATES: Record<string, string> = { wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood' };
 // 오행 상극(내가 극하는 대상): 목→토→수→화→금→목
-const ELEMENT_CONTROLS: Record<string, string> = { wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood' };
+export const ELEMENT_CONTROLS: Record<string, string> = { wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood' };
 
 // 십신 판별 시 지장간 정기(正氣)의 음양이 지지 명목 음양과 반대인 지지 (자·사·오·해)
 const SIPSIN_BRANCH_YINYANG_FLIP = new Set([0, 5, 6, 11]);
