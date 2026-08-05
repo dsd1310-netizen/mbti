@@ -39,61 +39,75 @@ function errorBody(message: string, code?: string) {
 }
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    res.status(405).json(errorBody('Method not allowed'));
-    return;
-  }
-
-  const origin = req.headers?.origin;
-  const expectedOrigin = req.headers?.host ? `https://${req.headers.host}` : null;
-  const isAllowedOrigin = Boolean(origin) && (origin === expectedOrigin || NATIVE_ORIGINS.has(origin));
-  if (!isAllowedOrigin) {
-    res.status(403).json(errorBody('허용되지 않은 요청입니다.'));
-    return;
-  }
-
-  // model 파라미터 검증은 rate limit 소비보다 먼저 — 잘못된 model로 오는 요청이
-  // 하루 250회 할당량을 갉아먹지 않도록 함.
-  const modelParam = req.query?.model;
-  const model = typeof modelParam === 'string' ? modelParam : Array.isArray(modelParam) ? modelParam[0] : '';
-  if (!ALLOWED_MODELS.has(model)) {
-    res.status(400).json(errorBody('허용되지 않은 model 파라미터입니다.'));
-    return;
-  }
-
-  // 개발자 전용 우회 키 — 클라이언트 코드에는 절대 값을 심지 않고, 브라우저
-  // localStorage에 직접 설정한 값만 헤더로 실려 온다(코드만 봐서는 값을 알 수 없음).
-  const devKey = req.headers?.['x-dev-key'];
-  const isDevBypass = Boolean(process.env.DEV_BYPASS_KEY) && devKey === process.env.DEV_BYPASS_KEY;
-
-  if (!isDevBypass) {
-    const ip = extractClientIp(req);
-    const allowed = await checkAndConsumeRateLimit(ip);
-    if (!allowed) {
-      res.status(429).json(errorBody('오늘 요청 가능한 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.'));
+  // [2026-08-06] 최상위 try/catch — 이 안의 어떤 예외든 여기서 잡히지 않으면 Vercel이
+  // "FUNCTION_INVOCATION_FAILED"라는 순수 텍스트(JSON 아님) 500 페이지를 대신 반환한다.
+  // 실제로 겪은 장애: checkAndConsumeRateLimit()가 예외를 던졌을 때 이 안전망이 없어서
+  // 클라이언트가 매번 이 크래시 페이지를 받았고, JSON이 아니라 파싱이 실패해 결국 "API 오류
+  // (500)"라는 뭉뚱그린 메시지로만 보였음(실제 원인은 서버 로그에도 남지 않아 진단이 어려웠음).
+  // 이 안전망 이후로는 예상치 못한 예외도 최소한 errorBody() 형태의 JSON으로 응답하고
+  // console.error로 Vercel 함수 로그에 실제 원인이 남는다.
+  try {
+    if (req.method !== 'POST') {
+      res.status(405).json(errorBody('Method not allowed'));
       return;
     }
-  }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    // code: 'CONFIG_MISSING' — 클라이언트가 이 코드를 보면 (업스트림 과부하와 달리) 재시도해도
-    // 절대 성공할 수 없는 서버 설정 오류임을 알고 즉시 실패 처리하도록 함(geminiApi.ts 참고).
-    res.status(500).json(errorBody('서버에 GEMINI_API_KEY가 설정되지 않았습니다.', 'CONFIG_MISSING'));
-    return;
-  }
+    const origin = req.headers?.origin;
+    const expectedOrigin = req.headers?.host ? `https://${req.headers.host}` : null;
+    const isAllowedOrigin = Boolean(origin) && (origin === expectedOrigin || NATIVE_ORIGINS.has(origin));
+    if (!isAllowedOrigin) {
+      res.status(403).json(errorBody('허용되지 않은 요청입니다.'));
+      return;
+    }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+    // model 파라미터 검증은 rate limit 소비보다 먼저 — 잘못된 model로 오는 요청이
+    // 하루 250회 할당량을 갉아먹지 않도록 함.
+    const modelParam = req.query?.model;
+    const model = typeof modelParam === 'string' ? modelParam : Array.isArray(modelParam) ? modelParam[0] : '';
+    if (!ALLOWED_MODELS.has(model)) {
+      res.status(400).json(errorBody('허용되지 않은 model 파라미터입니다.'));
+      return;
+    }
 
-  try {
-    const upstream = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-    });
-    const data = await upstream.json();
-    res.status(upstream.status).json(data);
+    // 개발자 전용 우회 키 — 클라이언트 코드에는 절대 값을 심지 않고, 브라우저
+    // localStorage에 직접 설정한 값만 헤더로 실려 온다(코드만 봐서는 값을 알 수 없음).
+    const devKey = req.headers?.['x-dev-key'];
+    const isDevBypass = Boolean(process.env.DEV_BYPASS_KEY) && devKey === process.env.DEV_BYPASS_KEY;
+
+    if (!isDevBypass) {
+      const ip = extractClientIp(req);
+      const allowed = await checkAndConsumeRateLimit(ip);
+      if (!allowed) {
+        res.status(429).json(errorBody('오늘 요청 가능한 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.'));
+        return;
+      }
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      // code: 'CONFIG_MISSING' — 클라이언트가 이 코드를 보면 (업스트림 과부하와 달리) 재시도해도
+      // 절대 성공할 수 없는 서버 설정 오류임을 알고 즉시 실패 처리하도록 함(geminiApi.ts 참고).
+      res.status(500).json(errorBody('서버에 GEMINI_API_KEY가 설정되지 않았습니다.', 'CONFIG_MISSING'));
+      return;
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+
+    try {
+      const upstream = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+      });
+      const data = await upstream.json();
+      res.status(upstream.status).json(data);
+    } catch (err: any) {
+      res.status(502).json(errorBody(err?.message ?? 'Gemini 프록시 요청 실패'));
+    }
   } catch (err: any) {
-    res.status(502).json(errorBody(err?.message ?? 'Gemini 프록시 요청 실패'));
+    console.error('[api/gemini] 처리되지 않은 예외:', err);
+    if (!res.headersSent) {
+      res.status(500).json(errorBody(err?.message ?? '서버에서 처리되지 않은 오류가 발생했습니다.'));
+    }
   }
 }
