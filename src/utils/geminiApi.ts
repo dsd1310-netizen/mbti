@@ -3,6 +3,7 @@
  * 사주 정보 + MBTI를 기반으로 AI 해석 생성
  */
 
+import { Capacitor } from '@capacitor/core';
 import { ElementCounts, SajuResult, SipsinProfile, SipsinType } from './sajuCalculator';
 import { MBTI_DATA } from '../data/mbtiTypes';
 import { MBTI_DETAILED } from '../data/mbtiDetailed';
@@ -17,6 +18,12 @@ const MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-pro',
 ];
+
+// 네이티브 앱(Capacitor)의 웹뷰는 capacitor://localhost 등 로컬 오리진에서 로드되어
+// 상대경로 fetch('/api/gemini')가 실제 배포 서버에 도달하지 못한다 — 네이티브일 때만
+// 배포 도메인 절대경로를 사용(웹은 기존처럼 상대경로 유지). api/gemini.ts의 Origin
+// 허용리스트에도 네이티브 오리진이 함께 추가되어 있어야 함(계획안.md 8절 참고).
+const API_BASE = Capacitor.isNativePlatform() ? 'https://mbti-delta-red.vercel.app' : '';
 
 export interface CategoryInterpretation {
   analysis: string;       // 심층 분석 내용 (5~7줄 이상, 비유 활용)
@@ -136,7 +143,7 @@ async function callGeminiJsonApi<T>(
 
   for (const model of MODELS) {
     // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
-    const url = `/api/gemini?model=${model}`;
+    const url = `${API_BASE}/api/gemini?model=${model}`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -1189,7 +1196,7 @@ async function callGeminiPlainApi(
   try {
     for (const model of MODELS) {
       // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
-      const url = `/api/gemini?model=${model}`;
+      const url = `${API_BASE}/api/gemini?model=${model}`;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const controller = new AbortController();

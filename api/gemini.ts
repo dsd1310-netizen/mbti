@@ -23,6 +23,12 @@ const ALLOWED_MODELS = new Set([
   'gemini-2.5-pro',
 ]);
 
+// 네이티브 앱(Capacitor) 웹뷰는 capacitor://localhost(iOS) 등 로컬 오리진에서 로드되어
+// 배포 도메인과 Origin이 다르므로 별도로 허용한다. Origin 검사는 원래도 스푸핑 가능한
+// 최소 방어선이라(실질 방어는 IP별 하루 250회 제한) 이 허용리스트 추가로 보안 수준이
+// 유의미하게 낮아지지는 않는다.
+const NATIVE_ORIGINS = new Set(['capacitor://localhost', 'https://localhost', 'http://localhost']);
+
 // 이 프록시 자체가 반환하는 에러는 업스트림 Gemini 에러 응답 형태({ error: { message } })와
 // 동일한 모양으로 맞춘다 — 클라이언트(geminiApi.ts)가 항상 err.error.message로 메시지를 꺼내는데,
 // 예전엔 이 파일이 { error: "문자열" } 형태(중첩 없음)로 응답해서 err.error.message가 항상
@@ -40,7 +46,8 @@ export default async function handler(req: any, res: any) {
 
   const origin = req.headers?.origin;
   const expectedOrigin = req.headers?.host ? `https://${req.headers.host}` : null;
-  if (!origin || !expectedOrigin || origin !== expectedOrigin) {
+  const isAllowedOrigin = Boolean(origin) && (origin === expectedOrigin || NATIVE_ORIGINS.has(origin));
+  if (!isAllowedOrigin) {
     res.status(403).json(errorBody('허용되지 않은 요청입니다.'));
     return;
   }

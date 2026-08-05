@@ -276,6 +276,11 @@ function pairCompatCacheKey(f: CacheKeyBase, partnerName: string, partnerBirthYe
 // Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
 // 아래 값은 실제 키가 아니라, 기존 코드 전반의 `if (!GEMINI_API_KEY)` 활성화 여부 검사를
 // 그대로 유지하기 위한 하위 호환용 상수이며 geminiApi.ts의 저수준 함수에서는 사용하지 않습니다.
+// ⚠️ 이 값은 항상 truthy인 리터럴 상수라서 파일 전체의 `if (!GEMINI_API_KEY)` / `{!GEMINI_API_KEY && ...}`
+// 분기(예: 아래 "AI 비활성화" 안내 UI)는 전부 도달 불가능한 죽은 코드입니다 — 서버 쪽 실제 키
+// 누락 여부(GEMINI_API_KEY 환경변수)는 이 상수와 무관하며, api/gemini.ts가 매 호출마다
+// 개별적으로 확인합니다(CONFIG_MISSING 에러로 응답). "키 없음"을 감지하는 살아있는 체크로
+// 오인해 여기에 실제 감지 로직을 추가하려 하지 마세요.
 const GEMINI_API_KEY = 'server-managed';
 
 // ─── 앱 컴포넌트 ──────────────────────────────────
@@ -2834,6 +2839,13 @@ export default function App() {
                   </div>
                 )}
               </div>
+              {result.astrologyTimeConfidence !== 'exact' && (
+                <p style={{ fontSize: 11, color: 'var(--gold)', marginBottom: 12, lineHeight: 1.6 }}>
+                  ⚠️ {result.astrologyTimeConfidence === 'unknown'
+                    ? '출생 시간을 몰라 정오로 근사 계산했어요. 오늘의 트랜짓도 참고만 해주세요.'
+                    : '태어난 시간대의 대표 시각으로 근사 계산했어요. "정확한 시:분 입력"을 쓰면 트랜짓 결과가 더 정확해져요.'}
+                </p>
+              )}
               {transitData ? (
                 <>
                   <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
@@ -3256,6 +3268,14 @@ export default function App() {
                       <input className="form-input" type="number" placeholder="월" min="1" max="12" style={{ textAlign: 'center' }} value={partnerBirthMonth} onChange={(e) => setPartnerBirthMonth(e.target.value)} />
                       <input className="form-input" type="number" placeholder="일" min="1" max="31" style={{ textAlign: 'center' }} value={partnerBirthDay} onChange={(e) => setPartnerBirthDay(e.target.value)} />
                     </div>
+                    {(() => {
+                      const py = parseInt(partnerBirthYear);
+                      return !Number.isNaN(py) && py >= 1930 && py < 1940 ? (
+                        <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                          ⚠️ 1940년 이전 출생자는 절기 정밀 데이터가 없어 근사값으로 계산돼요. 절기 경계에 가까운 날짜라면 오차가 있을 수 있어요.
+                        </p>
+                      ) : null;
+                    })()}
                     <div style={{ display: 'flex', gap: 10 }}>
                       {[{ val: 'female', label: '🌸 여성' }, { val: 'male', label: '🌊 남성' }].map(g => (
                         <button

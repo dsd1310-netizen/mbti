@@ -23,7 +23,15 @@ function hashIp(ip: string): string {
   return createHash('sha256').update(ip).digest('hex').slice(0, 32);
 }
 
-/** IP 원문을 요청 헤더에서 뽑아낸다(Vercel은 x-forwarded-for에 클라이언트 IP를 실어 보낸다). */
+/**
+ * IP 원문을 요청 헤더에서 뽑아낸다.
+ * [2026-08-06 확인] Vercel 공식 문서(vercel.com/docs/headers/request-headers)에 따르면
+ * Vercel은 이 헤더를 자체적으로 덮어써서 실제 클라이언트 공인 IP만 실어 보내고, 클라이언트가
+ * 보낸 x-forwarded-for 값은 그대로 통과시키지 않는다("does not forward external IPs") —
+ * 즉 스푸핑으로 하루 250회 제한을 우회하는 시나리오는 (커스텀 신뢰 프록시를 쓰는 엔터프라이즈
+ * 요금제가 아닌 이상) 이 프로젝트에는 해당하지 않는다. `x-real-ip`/`x-vercel-forwarded-for`도
+ * 문서상 동일한 값의 별칭이라 바꿔 써도 차이가 없어, 기존 `split(',')[0]` 로직은 그대로 둠.
+ */
 export function extractClientIp(req: any): string {
   const forwarded = req.headers?.['x-forwarded-for'];
   const first = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : Array.isArray(forwarded) ? forwarded[0] : '';
