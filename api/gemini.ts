@@ -6,10 +6,12 @@
  *
  * 이 엔드포인트는 로그인 없이도 쓰는 앱 특성상 인증을 요구하지 않으므로,
  * 무분별한 오남용(다른 모델 호출, 다른 출처에서의 스크립트성 대량 호출)을
- * 최소한으로 막기 위해 (1) 모델명 화이트리스트, (2) 같은 출처(Origin) 검사를 둔다.
- * 완벽한 보호는 아니지만(Origin 헤더는 스푸핑 가능), 트래픽의 절대다수를 차지하는
- * "브라우저가 아닌 스크립트로 직접 두드리는" 시도는 걸러낸다.
+ * 최소한으로 막기 위해 (1) 모델명 화이트리스트, (2) 같은 출처(Origin) 검사,
+ * (3) IP별 하루 250회 요청 제한을 둔다. 완벽한 보호는 아니지만(Origin 헤더는
+ * 스푸핑 가능), 트래픽의 절대다수를 차지하는 "브라우저가 아닌 스크립트로 직접
+ * 두드리는" 시도와 "무한정 반복 호출"은 걸러낸다.
  */
+import { checkAndConsumeRateLimit, extractClientIp } from './_rateLimit';
 
 // src/utils/geminiApi.ts의 MODELS와 반드시 동일하게 유지 — 이 파일은 별도로 번들되는
 // Vercel 서버리스 함수라 그 파일을 직접 import하지 않는다(불필요한 클라이언트 코드까지
@@ -32,6 +34,20 @@ export default async function handler(req: any, res: any) {
   if (!origin || !expectedOrigin || origin !== expectedOrigin) {
     res.status(403).json({ error: '허용되지 않은 요청입니다.' });
     return;
+  }
+
+  // 개발자 전용 우회 키 — 클라이언트 코드에는 절대 값을 심지 않고, 브라우저
+  // localStorage에 직접 설정한 값만 헤더로 실려 온다(코드만 봐서는 값을 알 수 없음).
+  const devKey = req.headers?.['x-dev-key'];
+  const isDevBypass = Boolean(process.env.DEV_BYPASS_KEY) && devKey === process.env.DEV_BYPASS_KEY;
+
+  if (!isDevBypass) {
+    const ip = extractClientIp(req);
+    const allowed = await checkAndConsumeRateLimit(ip);
+    if (!allowed) {
+      res.status(429).json({ error: '오늘 요청 가능한 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.' });
+      return;
+    }
   }
 
   const apiKey = process.env.GEMINI_API_KEY;

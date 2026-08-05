@@ -98,6 +98,21 @@ function extractJsonObject<T>(raw: string): Partial<T> | null {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * /api/gemini 요청 헤더 구성 — 개발자가 브라우저 localStorage에 직접 설정해둔
+ * 우회 키가 있으면 함께 실어 보낸다(코드에는 값이 절대 없음, 서버 검증용).
+ */
+function buildGeminiRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const devKey = localStorage.getItem('napuli_dev_key');
+    if (devKey) headers['X-Dev-Key'] = devKey;
+  } catch {
+    // localStorage 접근 불가 환경(사파리 프라이빗 모드 등)은 그냥 무시
+  }
+  return headers;
+}
+
+/**
  * JSON 응답을 기대하는 Gemini API 호출 공통 함수 (모델 폴백 + 재시도 + 타임아웃)
  */
 async function callGeminiJsonApi<T>(
@@ -125,7 +140,7 @@ async function callGeminiJsonApi<T>(
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildGeminiRequestHeaders(),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
@@ -1108,7 +1123,7 @@ async function callGeminiPlainApi(
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildGeminiRequestHeaders(),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
