@@ -272,7 +272,7 @@ const GEMINI_API_KEY = 'server-managed';
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
   const [step, setStep] = useState<Step>('input');
-  const [activeSection, setActiveSection] = useState<'fortune' | 'ai' | 'compat' | 'fengshui' | 'astrology'>('fortune');
+  const [activeSection, setActiveSection] = useState<'today' | 'fortune' | 'ai' | 'compat' | 'fengshui' | 'astrology'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -369,9 +369,12 @@ export default function App() {
         if (!user) return;
         setCloudSyncLoading(true);
         try {
+          const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
+          // 로컬 기록은 클라우드 fetch가 끝난 "직후"(가능한 한 병합 직전)에 다시 읽는다 —
+          // fetch를 기다리는 동안 addBookmark/removeBookmark가 로컬에 새로 반영한 변경을
+          // 오래된 스냅샷으로 덮어써버리는 경합을 줄이기 위함.
           const localRaw = localStorage.getItem('saju_bookmarks');
           const local: Bookmark[] = localRaw ? JSON.parse(localRaw) : [];
-          const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
           const merged = mod.mergeBookmarks(local, cloud);
           setBookmarks(merged);
           localStorage.setItem('saju_bookmarks', JSON.stringify(merged));
@@ -1721,7 +1724,7 @@ export default function App() {
   // 나중에 다이어리에서 그 사람의 전체 결과 화면으로 되돌아갈 수 있도록 함
   const addBookmark = useCallback((category: string, title: string, content: string) => {
     const bm: Bookmark = {
-      id: Date.now(), category, title, content,
+      id: Date.now() * 1000 + Math.floor(Math.random() * 1000), category, title, content,
       date: new Date().toLocaleDateString('ko-KR'),
       snapshot: result ? { ...result.formData } : undefined,
     };
@@ -2488,6 +2491,7 @@ export default function App() {
             {/* 결과 화면 섹션 탭 */}
             <div className="tab-nav section-tab-nav" role="tablist" aria-label="결과 섹션">
               {[
+                { id: 'today', label: '✨ 오늘' },
                 { id: 'fortune', label: '🌌 운세' },
                 { id: 'ai', label: '🔮 나풀이 해석' },
                 { id: 'compat', label: '💑 궁합' },
@@ -2507,8 +2511,8 @@ export default function App() {
               ))}
             </div>
 
-            {/* 운세: 오행 분포 + 시주 정보 + 대운/세운 */}
-            {activeSection === 'fortune' && (
+            {/* ✨ 오늘: 오늘의 나풀이 + 오늘의 타로 + 오늘의 트랜짓 — 매일 새로 보는 콘텐츠 3종을 한곳에 모음 */}
+            {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
 
             {/* 오늘의 나풀이 (데일리 운세) */}
@@ -2595,6 +2599,51 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* 오늘의 트랜짓 (별자리 기반) */}
+            <div className="glass-card-gold" style={{ padding: '20px 22px' }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                <div>
+                  <div className="section-label">🔮 오늘의 트랜짓</div>
+                  <div className="section-title" style={{ fontSize: 16 }}>오늘 하늘이 내 차트에 건네는 말</div>
+                </div>
+                {transitData && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+              {transitData ? (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
+                    {transitData.analysis}
+                  </p>
+                  <div className="fact-bomb-box">
+                    <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
+                    <div className="fact-bomb-content">{transitData.factBomb}</div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    오늘 실제 하늘의 행성이 내 출생 차트와 어떤 각도를 이루는지 살펴봐요. (별자리 탭에서 어센던트·행성 배치를 먼저 확인하면 더 잘 이해돼요)
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateTransit} disabled={transitLoading}>
+                    {transitLoading ? <span>✨ 살펴보는 중...</span> : <span>🔮 오늘의 트랜짓 보기</span>}
+                  </button>
+                </div>
+              )}
+            </div>
+            </div>
+            )}
+
+            {/* 운세: 오행 분포 + 시주 정보 + 대운/세운 */}
+            {activeSection === 'fortune' && (
+            <div className="space-y-6 animate-fade-in">
 
             {/* 오행 분포 */}
             <div className="glass-card animate-slide-up-delay-2">
@@ -3379,44 +3428,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
-              <div className="glass-card-gold animate-slide-up-delay-2">
-                <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                  <div>
-                    <div className="section-label">🔮 오늘의 트랜짓</div>
-                    <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()} · 오늘 하늘이 내 차트에 건네는 말</div>
-                  </div>
-                  {transitData && (
-                    <button
-                      className="btn-secondary"
-                      style={{ padding: '6px 12px', fontSize: 11 }}
-                      onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
-                    >
-                      🔖 저장
-                    </button>
-                  )}
-                </div>
-                {transitData ? (
-                  <>
-                    <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
-                      {transitData.analysis}
-                    </p>
-                    <div className="fact-bomb-box">
-                      <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
-                      <div className="fact-bomb-content">{transitData.factBomb}</div>
-                    </div>
-                  </>
-                ) : (
-                  <div>
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
-                      오늘 실제 하늘의 행성이 내 출생 차트와 어떤 각도를 이루는지 살펴봐요.
-                    </p>
-                    <button className="btn-primary" onClick={handleGenerateTransit} disabled={transitLoading}>
-                      {transitLoading ? <span>✨ 살펴보는 중...</span> : <span>🔮 오늘의 트랜짓 보기</span>}
-                    </button>
-                  </div>
-                )}
-              </div>
 
               <div className="glass-card animate-slide-up-delay-2">
                 <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>

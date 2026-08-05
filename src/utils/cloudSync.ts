@@ -44,7 +44,10 @@ export async function signOutUser(): Promise<void> {
  */
 export async function deleteAccount(user: User): Promise<void> {
   if (!auth || !db) return;
-  await deleteDoc(doc(db, 'users', user.uid)).catch(() => {});
+  // Firestore 문서 삭제가 실패하면 계정(Auth) 삭제를 진행하지 않는다 — 순서를 바꾸면
+  // Auth 계정이 먼저 사라져 해당 uid로 다시 로그인할 방법이 없어지고, 실패한 Firestore
+  // 문서가 영원히 고아 상태로 남아 재시도조차 불가능해지기 때문.
+  await deleteDoc(doc(db, 'users', user.uid));
   try {
     await deleteUser(user);
   } catch (err: any) {
