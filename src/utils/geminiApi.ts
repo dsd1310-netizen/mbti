@@ -466,9 +466,12 @@ export async function generateFortuneInterpretation(
 }
 
 /**
- * 오늘의 나풀이 — 일주(본인 고유 간지)와 오늘 날짜의 일진 관계를 바탕으로 한 짧은 데일리 운세
+ * 오늘의 나풀이 — 일주(본인 고유 간지)와 오늘 날짜의 일진 관계를 바탕으로 한 짧은 데일리 운세.
+ * 일간뿐 아니라 MBTI·오행 분포·시주까지 반영해, 같은 날이어도 사람마다 결이 다르게 나오도록 함
+ * (다른 "오늘의 OO" 콘텐츠와 결과가 비슷하게 느껴진다는 피드백에 따른 개선 — 계획안.md 8-2 참고).
  */
 export interface DailyFortune {
+  keyword: string;  // 오늘의 기운을 압축한 2~4글자 키워드 (예: "질주", "재정비")
   analysis: string; // 오늘의 기운 설명 + 행동 팁 (2~3문장)
   factBomb: string; // 🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄
 }
@@ -476,32 +479,41 @@ export interface DailyFortune {
 export async function generateDailyFortune(
   apiKey: string,
   name: string,
+  mbti: string,
   dayStem: string,
   dayStemElement: string,
+  elementCounts: ElementCounts,
+  hourBranchName: string | null,
   todayGanji: string,
   todayHanja: string,
   todayAnimal: string,
 ): Promise<DailyFortune> {
+  const elemStr = elementCountsStr(elementCounts);
   const prompt = `당신은 대한민국 최고 권위의 명리학 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
-아래 사용자의 일간(본인 고유 기운)과 오늘 날짜의 일진(오늘의 간지)의 관계를 바탕으로, [오늘 하루 운세]를 작성해 주세요.
+아래 사용자의 일간(본인 고유 기운)과 오늘 날짜의 일진(오늘의 간지)의 관계를 중심으로, MBTI 성향과 사주 전체 오행 균형도 함께 참고해 [오늘 하루 운세]를 작성해 주세요.
 
 【 사용자 정보 】
-- 이름: ${name}
+- 이름: ${name} (MBTI ${mbti})
 - 일간(본인의 기운): ${dayStem}(${ELEMENT_KO[dayStemElement]} 에너지)
+- 사주 전체 오행 분포: ${elemStr}
+- 시주(태어난 시간대): ${hourBranchName ?? '모름'}
 - 오늘의 일진: ${todayHanja}(${todayGanji}) · ${todayAnimal}띠 기운이 강한 날
 
 【 작성 지침 】
-1. analysis: 일간과 오늘 일진의 오행 관계(같은 기운/서로 돕는 기운/부딪히는 기운 등)를 어려운 명리 용어 없이 일상적인 비유로 짧게 짚고, 오늘 하루 어떤 마음가짐이나 행동이 잘 맞을지 구체적인 팁 1개를 포함해 존댓말로 2~3문장 작성하세요.
-2. factBomb: "오늘 당신은 분명 ○○할 겁니다" 식으로, 오늘의 기운을 고려했을 때 이 사람이 실제로 할 법한 행동이나 반응을 위트 있게 콕 찌르는 팩폭 한 줄(존댓말 매운맛, 반전 유머). 예: "오늘 그렇게 차분한 척 하셔도, 속으로는 이미 세 가지 딴생각을 하고 계실 걸요!"
-3. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+1. keyword: 오늘의 기운을 한눈에 압축한 2~4글자 키워드 하나(예: "질주", "재정비", "숨고르기", "도약"). 단순 오행 이름이 아니라 오늘 하루의 분위기를 나타내는 단어로.
+2. analysis: 일간과 오늘 일진의 오행 관계(같은 기운/서로 돕는 기운/부딪히는 기운 등)를 어려운 명리 용어 없이 일상적인 비유로 짧게 짚되, 이 사람의 MBTI 성향이나 오행 분포상 특징(예: 특정 오행이 부족/과다)과 자연스럽게 엮어서 "이 사람만의" 오늘로 느껴지게 작성하고, 오늘 하루 어떤 마음가짐이나 행동이 잘 맞을지 구체적인 팁 1개를 포함해 존댓말로 2~3문장 작성하세요.
+3. factBomb: "오늘 당신은 분명 ○○할 겁니다" 식으로, 오늘의 기운과 MBTI 성향을 고려했을 때 이 사람이 실제로 할 법한 행동이나 반응을 위트 있게 콕 찌르는 팩폭 한 줄(존댓말 매운맛, 반전 유머). 예: "오늘 그렇게 차분한 척 하셔도, 속으로는 이미 세 가지 딴생각을 하고 계실 걸요!"
+4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
 
 {
+  "keyword": "오늘의 기운 2~4글자 키워드",
   "analysis": "오늘의 기운 설명 + 행동 팁 (2~3문장)",
   "factBomb": "🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄"
 }`;
 
   const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 8192, 45000);
   return {
+    keyword: cleanField(parsed?.keyword, '오늘의 기운 2~4글자 키워드', '오늘의 기운'),
     analysis: cleanField(
       parsed?.analysis,
       '오늘의 기운 설명 + 행동 팁 (2~3문장)',
@@ -1064,6 +1076,7 @@ function formatTransits(transits: TransitAspect[]): string {
 }
 
 export interface DailyTransitFortune {
+  keyword: string;  // 오늘의 하늘 상태를 압축한 2~4글자 키워드 (예: "폭풍전야", "순풍")
   analysis: string; // 오늘의 트랜짓 기운 설명 + 행동 팁
   factBomb: string; // 위트있는 팩폭 한줄
 }
@@ -1077,8 +1090,8 @@ export async function generateTransitInterpretation(
 ): Promise<DailyTransitFortune> {
   const genderText = gender === 'male' ? '남성' : '여성';
 
-  const prompt = `당신은 서양 고전점성술 전문가이자 유쾌하고 날카로운 심리 칼럼니스트입니다.
-아래 ${name}(${genderText}) 님의 출생 차트(네이탈)와, 오늘 실제 하늘의 행성이 그 차트와 이루는 각도(트랜짓)를 바탕으로 [오늘 하루 운세]를 작성해 주세요.
+  const prompt = `당신은 서양 고전점성술 전문가이자, 매일 아침 "오늘의 하늘 예보"를 전하는 위트 있는 캐스터입니다.
+아래 ${name}(${genderText}) 님의 출생 차트(네이탈)와, 오늘 실제 하늘의 행성이 그 차트와 이루는 각도(트랜짓)를 바탕으로, 일기예보를 전하듯 [오늘의 하늘 예보]를 작성해 주세요.
 
 【 네이탈 요약 】
 ${formatAstrologySummary(natal)}
@@ -1087,21 +1100,24 @@ ${formatAstrologySummary(natal)}
 ${formatTransits(transits)}
 
 【 작성 지침 】
-1. analysis: 오늘의 트랜짓이 이 사람의 타고난 차트를 자극하는 지점을 짚고, 오늘 하루 어울리는 마음가짐이나 행동 팁 1개를 포함해 존댓말로 2~3문장 작성하세요. 트랜짓 애스펙트가 없다면 "오늘은 특별히 자극받는 지점 없이 평온하게 흘러가는 날"이라는 취지로 자연스럽게 작성하세요.
-2. factBomb: 오늘의 기운을 고려했을 때 이 사람이 실제로 할 법한 행동을 위트 있게 찌르는 팩폭 한 줄(존댓말 매운맛).
-3. 전문용어를 그대로 나열하지 말고 쉬운 비유를 사용하세요.
-4. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
+1. keyword: 오늘 하늘 상태를 일기예보 헤드라인처럼 압축한 2~4글자 키워드 하나(예: "폭풍전야", "맑음", "역풍", "순풍"). 날씨/기상 비유를 살려서.
+2. analysis: 오늘의 트랜짓이 이 사람의 타고난 차트를 자극하는 지점을 "오늘 하늘엔 ○○ 기운이 지나갑니다" 식의 예보 캐스터 톤으로 짚고, 오늘 하루 어울리는 마음가짐이나 행동 팁 1개를 포함해 존댓말로 2~3문장 작성하세요. 트랜짓 애스펙트가 없다면 "오늘은 특별히 자극받는 지점 없이 평온하게 흘러가는 맑은 날"이라는 취지로 자연스럽게 작성하세요.
+3. factBomb: 오늘의 하늘 기운을 고려했을 때 이 사람이 실제로 할 법한 행동을 위트 있게 찌르는 팩폭 한 줄(존댓말 매운맛).
+4. 명리학 콘텐츠와 겹치지 않도록, 오행/십신 같은 동양 명리 용어 대신 행성·별자리 등 서양 점성술 어휘와 날씨 비유를 사용하세요.
+5. 반드시 아래 JSON 형식 그대로만 작성하세요. 마크다운 코드블록은 절대 쓰지 마세요.
 
 {
-  "analysis": "오늘의 트랜짓 기운 설명 + 행동 팁 (2~3문장)",
+  "keyword": "오늘 하늘 상태 2~4글자 키워드",
+  "analysis": "오늘의 하늘 예보 + 행동 팁 (2~3문장)",
   "factBomb": "🔥 오늘 할 법한 행동을 위트있게 찌르는 팩폭 한줄"
 }`;
 
   const parsed = await callGeminiJsonApi<DailyTransitFortune>(apiKey, prompt, 8192, 45000);
   return {
+    keyword: cleanField(parsed?.keyword, '오늘 하늘 상태 2~4글자 키워드', '오늘의 하늘'),
     analysis: cleanField(
       parsed?.analysis,
-      '오늘의 트랜짓 기운 설명 + 행동 팁 (2~3문장)',
+      '오늘의 하늘 예보 + 행동 팁 (2~3문장)',
       '오늘은 타고난 차트가 크게 자극받지 않는, 비교적 평온하게 흘러가는 날입니다. 평소의 리듬을 유지해 보세요.',
     ),
     factBomb: cleanField(

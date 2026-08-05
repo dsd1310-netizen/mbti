@@ -1045,8 +1045,11 @@ export default function App() {
       const data = await generateDailyFortune(
         GEMINI_API_KEY,
         result.formData.name,
+        result.formData.mbti,
         result.sajuResult.dayStem,
         result.sajuResult.dayStemElement,
+        result.sajuResult.elementCounts,
+        result.formData.hourUnknown ? null : result.hourBranch.name,
         todayPillar.text,
         todayPillar.hanjaText,
         todayAnimal,
@@ -2703,13 +2706,18 @@ export default function App() {
                   <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()}</div>
                 </div>
                 {dailyFortuneData && (
-                  <button
-                    className="btn-secondary"
-                    style={{ padding: '6px 12px', fontSize: 11 }}
-                    onClick={() => addBookmark('오늘의 나풀이', `${todayDateStr()} 오늘의 나풀이`, `${dailyFortuneData.analysis}\n\n${dailyFortuneData.factBomb}`)}
-                  >
-                    🔖 저장
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'rgba(245, 200, 66, 0.15)', color: 'var(--gold)', whiteSpace: 'nowrap' }}>
+                      오늘의 기운: {dailyFortuneData.keyword}
+                    </span>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 11 }}
+                      onClick={() => addBookmark('오늘의 나풀이', `${todayDateStr()} 오늘의 나풀이`, `${dailyFortuneData.analysis}\n\n${dailyFortuneData.factBomb}`)}
+                    >
+                      🔖 저장
+                    </button>
+                  </div>
                 )}
               </div>
               {dailyFortuneData ? (
@@ -2754,14 +2762,25 @@ export default function App() {
               {tarotData ? (() => {
                 const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${todayDateStr()}`;
                 const { card, reversed } = drawDailyTarotCard(seed);
+                const cardMeaning = reversed ? card.meaningReversed : card.meaningUpright;
+                // 메이저 아르카나·에이스는 keywordsUpright/Reversed가 따로 있고, 나머지 마이너 카드는
+                // meaning 필드 자체가 "·"로 구분된 짧은 구문 나열이라 첫 구문을 키워드로 재사용.
+                const keyword = (reversed ? card.keywordsReversed : card.keywordsUpright)?.[0] ?? cardMeaning.split('·')[0]?.trim();
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                      <span style={{ fontSize: 28 }}>{card.emoji}</span>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: 15 }}>{card.name} ({reversed ? '역방향' : '정방향'})</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 28 }}>{card.emoji}</span>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: 15 }}>{card.name} ({reversed ? '역방향' : '정방향'})</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
+                        </div>
                       </div>
+                      {keyword && (
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'rgba(139, 92, 246, 0.15)', color: 'var(--purple-light)', whiteSpace: 'nowrap' }}>
+                          오늘의 키워드: {keyword}
+                        </span>
+                      )}
                     </div>
                     {card.tagline && (
                       <p style={{ fontSize: 12, color: 'var(--gold)', fontStyle: 'italic', margin: '0 0 10px' }}>
@@ -2793,13 +2812,18 @@ export default function App() {
                   <div className="section-title" style={{ fontSize: 16 }}>오늘 하늘이 내 차트에 건네는 말</div>
                 </div>
                 {transitData && (
-                  <button
-                    className="btn-secondary"
-                    style={{ padding: '6px 12px', fontSize: 11 }}
-                    onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
-                  >
-                    🔖 저장
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--blue)', whiteSpace: 'nowrap' }}>
+                      오늘의 하늘: {transitData.keyword}
+                    </span>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 11 }}
+                      onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
+                    >
+                      🔖 저장
+                    </button>
+                  </div>
                 )}
               </div>
               {transitData ? (
