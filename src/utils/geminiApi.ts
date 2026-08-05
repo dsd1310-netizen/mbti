@@ -1058,12 +1058,15 @@ export async function generateTarotInterpretation(
   const genderText = gender === 'male' ? '남성' : '여성';
   const orientation = reversed ? '역방향' : '정방향';
   const meaning = reversed ? card.meaningReversed : card.meaningUpright;
+  const keywords = reversed ? card.keywordsReversed : card.keywordsUpright;
 
   const prompt = `당신은 위트 있고 따뜻한 타로 리더입니다. 이건 진지한 점술이 아니라 가볍게 즐기는 오늘의 한마디 콘텐츠입니다.
 ${name}(${genderText}, MBTI ${mbti}) 님이 오늘 뽑은 카드는 [${card.name}(${card.nameEn}) - ${orientation}]입니다.
 
 【 카드 의미 】
 ${meaning}
+${keywords ? `상세 키워드: ${keywords.join(', ')}` : ''}
+${card.tagline ? `카드 한 줄 상징: "${card.tagline}"` : ''}
 
 【 작성 지침 】
 1. 이 카드의 의미를 MBTI ${mbti}의 성향과 살짝 엮어서, 오늘 하루에 어울리는 한마디를 존댓말로 2~3문장 작성하세요.

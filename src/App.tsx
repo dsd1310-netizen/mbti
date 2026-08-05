@@ -2605,6 +2605,11 @@ export default function App() {
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
                       </div>
                     </div>
+                    {card.tagline && (
+                      <p style={{ fontSize: 12, color: 'var(--gold)', fontStyle: 'italic', margin: '0 0 10px' }}>
+                        "{card.tagline}"
+                      </p>
+                    )}
                     <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
                       {tarotData}
                     </p>
