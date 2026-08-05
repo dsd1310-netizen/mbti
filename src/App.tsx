@@ -264,8 +264,10 @@ function tarotCacheKey(f: CacheKeyBase, dateStr: string): string {
   return `saju_tarot_${baseKeyId(f)}_${dateStr}`;
 }
 
-// Gemini API 키는 사용자에게 노출/입력받지 않고 내장 키만 사용합니다.
-const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+// Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
+// 아래 값은 실제 키가 아니라, 기존 코드 전반의 `if (!GEMINI_API_KEY)` 활성화 여부 검사를
+// 그대로 유지하기 위한 하위 호환용 상수이며 geminiApi.ts의 저수준 함수에서는 사용하지 않습니다.
+const GEMINI_API_KEY = 'server-managed';
 
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
@@ -399,6 +401,22 @@ export default function App() {
     const mod = await loadCloudSync();
     await mod.signOutUser();
     showToast('로그아웃되었습니다');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!currentUser) return;
+    const ok = window.confirm('계정과 클라우드에 저장된 기록을 영구적으로 삭제합니다. 이 기기의 로컬 다이어리 기록은 남아있지만, 계정 자체는 되돌릴 수 없습니다. 계속할까요?');
+    if (!ok) return;
+    setCloudSyncLoading(true);
+    try {
+      const mod = await loadCloudSync();
+      await mod.deleteAccount(currentUser);
+      showToast('계정이 삭제되었습니다');
+    } catch (err: any) {
+      showToast(`계정 삭제 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setCloudSyncLoading(false);
+    }
   };
 
   // 풍수 수리 가이드 / 운세 해설 캐시 로드
@@ -2317,6 +2335,14 @@ export default function App() {
                 <span>→</span>
               </button>
             </form>
+
+            <p style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 16, lineHeight: 1.6 }}>
+              🔮 나풀이의 모든 해석은 재미와 자기 이해를 위한 참고용 콘텐츠이며, 의학적·법률적·재정적 조언을 대체하지 않아요.
+              <br />
+              <a href="/privacy.html" style={{ color: 'var(--purple-light)' }}>개인정보처리방침</a>
+              {' · '}
+              <a href="/terms.html" style={{ color: 'var(--purple-light)' }}>이용약관</a>
+            </p>
           </div>
         )}
 
@@ -3502,7 +3528,10 @@ export default function App() {
                       ☁️ <strong>{currentUser.email}</strong>로 기록이 자동 백업되고 있어요
                       {cloudSyncLoading && <span style={{ color: 'var(--text-secondary)' }}> · 동기화 중...</span>}
                     </div>
-                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignOut}>로그아웃</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignOut}>로그아웃</button>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, color: '#f87171', borderColor: 'rgba(248,113,113,0.4)' }} onClick={handleDeleteAccount}>계정 삭제</button>
+                    </div>
                   </>
                 ) : (
                   <>

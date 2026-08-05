@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>개인정보처리방침 | 나풀이</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 40px 20px 80px;
+    background: #0a0a18; color: #e5e5f0;
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    line-height: 1.75; font-size: 15px;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .updated { color: #9b9bb5; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 17px; margin-top: 32px; color: #f5c842; }
+  p, li { color: #c9c9dc; }
+  ul { padding-left: 20px; }
+  a { color: #a78bfa; }
+  .back { display: inline-block; margin-bottom: 24px; color: #a78bfa; text-decoration: none; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">← 나풀이로 돌아가기</a>
+  <h1>🔮 나풀이 개인정보처리방침</h1>
+  <div class="updated">시행일자: 2026년 8월 5일</div>
+
+  <p>나풀이(이하 "서비스")는 이용자의 개인정보를 소중히 다루며, 아래와 같이 개인정보를 처리합니다.</p>
+
+  <h2>1. 수집하는 개인정보 항목</h2>
+  <ul>
+    <li>이용자가 직접 입력하는 정보: 이름(또는 닉네임), 생년월일시, 성별, 출생 도시, MBTI 유형</li>
+    <li>로그인(선택) 시 자동 수집되는 정보: 구글 계정의 이메일 주소, 프로필 식별자(UID)</li>
+  </ul>
+
+  <h2>2. 개인정보의 이용 목적</h2>
+  <ul>
+    <li>사주(四柱) 및 MBTI 기반 해석 콘텐츠를 생성하기 위해 Google Gemini API로 전송</li>
+    <li>로그인한 이용자의 "다이어리(저장 기록)"를 기기 간에 동기화하기 위해 Google Firebase(Firestore)에 저장</li>
+  </ul>
+
+  <h2>3. 개인정보의 저장 위치와 보유 기간</h2>
+  <ul>
+    <li><strong>로그인하지 않은 경우</strong>: 입력한 정보와 생성된 해석 기록은 이용자의 기기(브라우저) 안에만 저장되며, 서비스 서버로 전송되지 않습니다. 브라우저 저장소를 지우면 함께 삭제됩니다.</li>
+    <li><strong>로그인한 경우</strong>: "다이어리"에 저장한 기록만 Google Firebase(Firestore, 서울 리전)에 추가로 저장되어 기기 간 동기화에 사용됩니다. 계정을 삭제하면 즉시 파기됩니다.</li>
+    <li>AI 해석 생성을 위해 Google Gemini API로 전송되는 정보는 해석 생성 목적으로만 일시적으로 처리되며, 서비스가 별도로 보관하지 않습니다.</li>
+  </ul>
+
+  <h2>4. 개인정보의 제3자 제공 및 처리위탁</h2>
+  <p>서비스는 이용자의 개인정보를 별도 동의 없이 제3자에게 제공하지 않습니다. 다만 서비스 운영을 위해 아래 업체에 처리를 위탁합니다.</p>
+  <ul>
+    <li>Google LLC — Gemini API(해석 생성), Firebase(로그인, 클라우드 저장)</li>
+  </ul>
+
+  <h2>5. 이용자의 권리</h2>
+  <p>이용자는 언제든지 앱 내 "다이어리" 화면에서 <strong>로그아웃</strong> 또는 <strong>계정 삭제</strong>를 직접 실행할 수 있습니다. 계정 삭제 시 클라우드에 저장된 모든 기록이 즉시 영구 삭제됩니다(이 기기의 로컬 기록은 별도로 남아있으며, 브라우저에서 직접 삭제할 수 있습니다).</p>
+
+  <h2>6. 만 14세 미만 이용 제한</h2>
+  <p>본 서비스는 만 14세 미만 아동의 이용을 대상으로 하지 않습니다.</p>
+
+  <h2>7. 문의처</h2>
+  <p>개인정보 관련 문의사항은 아래로 연락해 주세요.<br />이메일: <a href="mailto:dsd1310@gmail.com">dsd1310@gmail.com</a></p>
+</main>
+</body>
+</html>

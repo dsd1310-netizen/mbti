@@ -101,7 +101,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
  * JSON 응답을 기대하는 Gemini API 호출 공통 함수 (모델 폴백 + 재시도 + 타임아웃)
  */
 async function callGeminiJsonApi<T>(
-  apiKey: string,
+  _apiKey: string,
   prompt: string,
   maxOutputTokens: number,
   timeoutMs: number = 20000,
@@ -111,7 +111,8 @@ async function callGeminiJsonApi<T>(
   const maxRetries = 3;
 
   for (const model of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
+    const url = `/api/gemini?model=${model}`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -122,7 +123,7 @@ async function callGeminiJsonApi<T>(
           await sleep(attempt * 1500);
         }
 
-        const response = await fetch(`${url}?key=${apiKey}`, {
+        const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1080,7 +1081,7 @@ ${meaning}
  * 일반 텍스트 출력을 위한 Gemini API 호출 함수
  */
 async function callGeminiPlainApi(
-  apiKey: string,
+  _apiKey: string,
   prompt: string,
   fallbackText: string,
   maxOutputTokens: number = 2048,
@@ -1090,7 +1091,8 @@ async function callGeminiPlainApi(
   const maxRetries = 3;
 
   for (const model of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
+    const url = `/api/gemini?model=${model}`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -1101,7 +1103,7 @@ async function callGeminiPlainApi(
           await sleep(attempt * 1500);
         }
 
-        const response = await fetch(`${url}?key=${apiKey}`, {
+        const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

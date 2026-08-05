@@ -8,9 +8,11 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
+  deleteUser,
+  reauthenticateWithPopup,
   type User,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 export const cloudSyncAvailable = Boolean(auth && db);
@@ -32,6 +34,27 @@ export async function signInWithGoogle(): Promise<User> {
 export async function signOutUser(): Promise<void> {
   if (!auth) return;
   await signOut(auth);
+}
+
+/**
+ * 계정 및 클라우드에 저장된 모든 데이터를 영구 삭제한다(로컬 기기의 다이어리 기록은 그대로 남음 —
+ * 로컬 저장은 계정과 무관하게 동작하는 별개의 저장소이므로).
+ * Firebase는 보안상 "최근 로그인"이 아니면 계정 삭제를 거부하므로(auth/requires-recent-login),
+ * 이 경우 구글 재인증 팝업을 한 번 더 띄운 뒤 삭제를 재시도한다.
+ */
+export async function deleteAccount(user: User): Promise<void> {
+  if (!auth || !db) return;
+  await deleteDoc(doc(db, 'users', user.uid)).catch(() => {});
+  try {
+    await deleteUser(user);
+  } catch (err: any) {
+    if (err?.code === 'auth/requires-recent-login') {
+      await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      await deleteUser(user);
+    } else {
+      throw err;
+    }
+  }
 }
 
 /** 두 다이어리 기록 배열을 id 기준으로 합침(중복 제거). 같은 id면 더 최근(id가 큰, 즉 나중에 저장된) 쪽을 유지. */
