@@ -513,7 +513,7 @@ export async function generateDailyFortune(
 
   const parsed = await callGeminiJsonApi<DailyFortune>(apiKey, prompt, 8192, 45000);
   return {
-    keyword: cleanField(parsed?.keyword, '오늘의 기운 2~4글자 키워드', '오늘의 기운'),
+    keyword: cleanField(parsed?.keyword, '오늘의 기운 2~4글자 키워드', '평온'),
     analysis: cleanField(
       parsed?.analysis,
       '오늘의 기운 설명 + 행동 팁 (2~3문장)',
@@ -1114,7 +1114,7 @@ ${formatTransits(transits)}
 
   const parsed = await callGeminiJsonApi<DailyTransitFortune>(apiKey, prompt, 8192, 45000);
   return {
-    keyword: cleanField(parsed?.keyword, '오늘 하늘 상태 2~4글자 키워드', '오늘의 하늘'),
+    keyword: cleanField(parsed?.keyword, '오늘 하늘 상태 2~4글자 키워드', '맑음'),
     analysis: cleanField(
       parsed?.analysis,
       '오늘의 하늘 예보 + 행동 팁 (2~3문장)',
