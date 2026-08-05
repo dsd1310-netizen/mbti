@@ -99,6 +99,14 @@ function extractJsonObject<T>(raw: string): Partial<T> | null {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * 429/503/500(업스트림 과부하)이 아닌 응답(400 잘못된 요청, 403 Origin 불일치 등)은 재시도해도
+ * 절대 성공할 수 없으므로 즉시 실패시켜야 하는데, 이 에러를 그냥 new Error로 던지면 바로 아래
+ * catch 블록에 다시 잡혀서(같은 try/catch 안이므로) 결과적으로 나머지 attempt/model을 전부
+ * 소진할 때까지 계속 재시도되는 문제가 있었음. 이 마커 클래스로 구분해 catch에서 즉시 재던짐.
+ */
+class NonRetryableApiError extends Error {}
+
+/**
  * /api/gemini 요청 헤더 구성 — 개발자가 브라우저 localStorage에 직접 설정해둔
  * 우회 키가 있으면 함께 실어 보낸다(코드에는 값이 절대 없음, 서버 검증용).
  */
@@ -158,15 +166,18 @@ async function callGeminiJsonApi<T>(
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
           const status = response.status;
-          const msg = (err as { error?: { message?: string } })?.error?.message || `API 오류 (${status})`;
+          const errInfo = (err as { error?: { message?: string; code?: string } })?.error;
+          const msg = errInfo?.message || `API 오류 (${status})`;
 
-          if (status === 429 || status === 503 || status === 500) {
+          // CONFIG_MISSING(서버 환경변수 누락)은 재시도해도 절대 성공할 수 없는 설정 오류라
+          // 과부하(429/503/500)와 달리 즉시 실패 처리.
+          if (errInfo?.code !== 'CONFIG_MISSING' && (status === 429 || status === 503 || status === 500)) {
             console.warn(`[GeminiAPI] ${model} 과부하/오류 (HTTP ${status}). ${attempt}/${maxRetries}회 재시도...`);
             lastError = new Error(msg);
             continue;
           }
 
-          throw new Error(msg);
+          throw new NonRetryableApiError(msg);
         }
 
         hadSuccessfulResponse = true;
@@ -185,6 +196,7 @@ async function callGeminiJsonApi<T>(
         lastError = new Error('AI 응답을 올바른 형식으로 해석하지 못했습니다.');
       } catch (err: any) {
         clearTimeout(timeoutId);
+        if (err instanceof NonRetryableApiError) throw err;
         lastError = err;
         if (attempt < maxRetries) {
           console.warn(`[GeminiAPI] ${model} 호출 실패, 재시도 대기...`, err?.message);
@@ -618,24 +630,23 @@ export async function generatePairCompatibilityInterpretation(
 ): Promise<string> {
   const genderTextA = genderA === 'male' ? '남성' : '여성';
   const genderTextB = genderB === 'male' ? '남성' : '여성';
-  const elementNames = { wood: '목(木)', fire: '화(火)', earth: '토(土)', metal: '금(金)', water: '수(水)' } as const;
 
   const prompt = `당신은 명리학 궁합 전문가입니다. 아래는 실제 두 사람의 사주(생년월일 기반)를 서로 비교한 정밀 궁합 데이터입니다.
 한자 용어를 몰라도 이해할 수 있는 [정밀 궁합 해설]을 작성해 주세요.
 
 【 ${nameA}(${genderTextA}) 님 】
 - 일주(본질): ${sajuA.dayPillar.hanjaText}(${sajuA.dayPillar.text})
-- 일간 오행: ${elementNames[sajuA.dayStemElement as keyof typeof elementNames]}
+- 일간 오행: ${ELEMENT_KO[sajuA.dayStemElement]}
 
 【 ${nameB}(${genderTextB}) 님 】
 - 일주(본질): ${sajuB.dayPillar.hanjaText}(${sajuB.dayPillar.text})
-- 일간 오행: ${elementNames[sajuB.dayStemElement as keyof typeof elementNames]}
+- 일간 오행: ${ELEMENT_KO[sajuB.dayStemElement]}
 
 【 두 사람의 관계 분석 】
 - 일지(日支) 관계: ${compare.dayBranchRelations.length > 0 ? compare.dayBranchRelations.join(', ') : '특별한 합충형파해 없음(무난한 관계)'}
 - 일간(日干) 오행 관계: ${STEM_RELATION_LABEL[compare.dayStemRelation]}
-- ${nameA} 님에게 부족하고 ${nameB} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.aNeedsFromB.length > 0 ? compare.aNeedsFromB.map(e => elementNames[e as keyof typeof elementNames]).join(', ') : '없음'}
-- ${nameB} 님에게 부족하고 ${nameA} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.bNeedsFromA.length > 0 ? compare.bNeedsFromA.map(e => elementNames[e as keyof typeof elementNames]).join(', ') : '없음'}
+- ${nameA} 님에게 부족하고 ${nameB} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.aNeedsFromB.length > 0 ? compare.aNeedsFromB.map(e => ELEMENT_KO[e]).join(', ') : '없음'}
+- ${nameB} 님에게 부족하고 ${nameA} 님에게 풍부해서 채워줄 수 있는 오행: ${compare.bNeedsFromA.length > 0 ? compare.bNeedsFromA.map(e => ELEMENT_KO[e]).join(', ') : '없음'}
 
 【 작성 지침 】
 1. 일지 관계(합/충/형/파/해)가 있다면 그게 두 사람 관계에서 실제로 어떻게 드러나는지 구체적인 상황 예시를 들어 설명하세요. 없다면 "특별히 부딪히거나 강하게 끌리는 지점은 없는, 잔잔하고 무난한 관계"라는 취지로 설명하세요.
@@ -1175,63 +1186,75 @@ async function callGeminiPlainApi(
   let lastError: Error | null = null;
   const maxRetries = 3;
 
-  for (const model of MODELS) {
-    // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
-    const url = `/api/gemini?model=${model}`;
+  try {
+    for (const model of MODELS) {
+      // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
+      const url = `/api/gemini?model=${model}`;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      try {
-        if (attempt > 1) {
-          await sleep(attempt * 1500);
-        }
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: buildGeminiRequestHeaders(),
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.8,
-              maxOutputTokens,
-            },
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          const status = response.status;
-          const msg = (err as { error?: { message?: string } })?.error?.message || `API 오류 (${status})`;
-
-          if (status === 429 || status === 503 || status === 500) {
-            lastError = new Error(msg);
-            continue;
+        try {
+          if (attempt > 1) {
+            await sleep(attempt * 1500);
           }
-          throw new Error(msg);
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: buildGeminiRequestHeaders(),
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.8,
+                maxOutputTokens,
+              },
+            }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            const status = response.status;
+            const errInfo = (err as { error?: { message?: string; code?: string } })?.error;
+            const msg = errInfo?.message || `API 오류 (${status})`;
+
+            if (errInfo?.code !== 'CONFIG_MISSING' && (status === 429 || status === 503 || status === 500)) {
+              lastError = new Error(msg);
+              continue;
+            }
+            throw new NonRetryableApiError(msg);
+          }
+
+          const data = await response.json();
+          const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
+            ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+          if (rawText.trim()) {
+            return rawText.trim();
+          }
+
+          // 응답은 정상 수신했지만 콘텐츠가 비어있음(세이프티 필터 등) — 네트워크 오류와 동일하게 재시도
+          const finishReason = (data as { candidates?: { finishReason?: string }[] })?.candidates?.[0]?.finishReason;
+          console.warn(`[GeminiAPI] ${model} 빈 응답 (finishReason: ${finishReason ?? '알 수 없음'}). ${attempt}/${maxRetries}회 재시도...`);
+          lastError = new Error('AI가 빈 응답을 반환했습니다.');
+        } catch (err: any) {
+          clearTimeout(timeoutId);
+          if (err instanceof NonRetryableApiError) throw err;
+          lastError = err;
         }
-
-        const data = await response.json();
-        const rawText: string = (data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })
-          ?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-
-        if (rawText.trim()) {
-          return rawText.trim();
-        }
-
-        // 응답은 정상 수신했지만 콘텐츠가 비어있음(세이프티 필터 등) — 네트워크 오류와 동일하게 재시도
-        const finishReason = (data as { candidates?: { finishReason?: string }[] })?.candidates?.[0]?.finishReason;
-        console.warn(`[GeminiAPI] ${model} 빈 응답 (finishReason: ${finishReason ?? '알 수 없음'}). ${attempt}/${maxRetries}회 재시도...`);
-        lastError = new Error('AI가 빈 응답을 반환했습니다.');
-      } catch (err: any) {
-        clearTimeout(timeoutId);
-        lastError = err;
       }
     }
+  } catch (err: any) {
+    if (err instanceof NonRetryableApiError) {
+      // 재시도해도 절대 성공할 수 없는 오류(설정 누락/Origin 불일치 등) — 나머지 attempt/model을
+      // 다 소진할 때까지 기다리지 않고 즉시 폴백 텍스트로 대체.
+      console.warn('[GeminiAPI] 재시도 불가 오류, 폴백 콘텐츠로 대체:', err.message);
+      return fallbackText;
+    }
+    throw err;
   }
 
   console.warn('All Gemini models failed:', lastError?.message); return fallbackText;

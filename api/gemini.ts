@@ -23,16 +23,34 @@ const ALLOWED_MODELS = new Set([
   'gemini-2.5-pro',
 ]);
 
+// 이 프록시 자체가 반환하는 에러는 업스트림 Gemini 에러 응답 형태({ error: { message } })와
+// 동일한 모양으로 맞춘다 — 클라이언트(geminiApi.ts)가 항상 err.error.message로 메시지를 꺼내는데,
+// 예전엔 이 파일이 { error: "문자열" } 형태(중첩 없음)로 응답해서 err.error.message가 항상
+// undefined가 되어 "오늘 요청 횟수를 다 썼습니다" 같은 실제 안내 문구 대신 뭉뚱그린
+// "API 오류 (403)" 류 메시지만 사용자에게 보였음.
+function errorBody(message: string, code?: string) {
+  return { error: { message, code } };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json(errorBody('Method not allowed'));
     return;
   }
 
   const origin = req.headers?.origin;
   const expectedOrigin = req.headers?.host ? `https://${req.headers.host}` : null;
   if (!origin || !expectedOrigin || origin !== expectedOrigin) {
-    res.status(403).json({ error: '허용되지 않은 요청입니다.' });
+    res.status(403).json(errorBody('허용되지 않은 요청입니다.'));
+    return;
+  }
+
+  // model 파라미터 검증은 rate limit 소비보다 먼저 — 잘못된 model로 오는 요청이
+  // 하루 250회 할당량을 갉아먹지 않도록 함.
+  const modelParam = req.query?.model;
+  const model = typeof modelParam === 'string' ? modelParam : Array.isArray(modelParam) ? modelParam[0] : '';
+  if (!ALLOWED_MODELS.has(model)) {
+    res.status(400).json(errorBody('허용되지 않은 model 파라미터입니다.'));
     return;
   }
 
@@ -45,21 +63,16 @@ export default async function handler(req: any, res: any) {
     const ip = extractClientIp(req);
     const allowed = await checkAndConsumeRateLimit(ip);
     if (!allowed) {
-      res.status(429).json({ error: '오늘 요청 가능한 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.' });
+      res.status(429).json(errorBody('오늘 요청 가능한 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.'));
       return;
     }
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: '서버에 GEMINI_API_KEY가 설정되지 않았습니다.' });
-    return;
-  }
-
-  const modelParam = req.query?.model;
-  const model = typeof modelParam === 'string' ? modelParam : Array.isArray(modelParam) ? modelParam[0] : '';
-  if (!ALLOWED_MODELS.has(model)) {
-    res.status(400).json({ error: '허용되지 않은 model 파라미터입니다.' });
+    // code: 'CONFIG_MISSING' — 클라이언트가 이 코드를 보면 (업스트림 과부하와 달리) 재시도해도
+    // 절대 성공할 수 없는 서버 설정 오류임을 알고 즉시 실패 처리하도록 함(geminiApi.ts 참고).
+    res.status(500).json(errorBody('서버에 GEMINI_API_KEY가 설정되지 않았습니다.', 'CONFIG_MISSING'));
     return;
   }
 
@@ -74,6 +87,6 @@ export default async function handler(req: any, res: any) {
     const data = await upstream.json();
     res.status(upstream.status).json(data);
   } catch (err: any) {
-    res.status(502).json({ error: err?.message ?? 'Gemini 프록시 요청 실패' });
+    res.status(502).json(errorBody(err?.message ?? 'Gemini 프록시 요청 실패'));
   }
 }
