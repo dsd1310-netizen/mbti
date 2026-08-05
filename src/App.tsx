@@ -27,6 +27,7 @@ import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
 import { drawDailyTarotCard } from './data/tarotCards';
+import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification } from './utils/notifications';
 import type { User } from 'firebase/auth';
 
 // 클라우드 동기화(Firebase)는 실제로 필요할 때(로그인 여부 확인/로그인 시도)만 동적으로 불러온다.
@@ -275,6 +276,9 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
   const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
+  // 🔔 매일 알림(네이티브 앱 전용) — 웹 버전에서는 UI 자체를 노출하지 않음
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => isDailyNotificationEnabled());
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     birthYear: '1995',
@@ -390,6 +394,25 @@ export default function App() {
     });
     return () => { if (unsubscribe) unsubscribe(); };
   }, []);
+
+  const handleToggleNotifications = async () => {
+    setNotificationsLoading(true);
+    try {
+      if (notificationsEnabled) {
+        await disableDailyNotification();
+        setNotificationsEnabled(false);
+        showToast('매일 알림을 껐어요');
+      } else {
+        const granted = await enableDailyNotification();
+        setNotificationsEnabled(granted);
+        showToast(granted ? '매일 오전 9시에 알려드릴게요 🔔' : '알림 권한이 허용되지 않았어요');
+      }
+    } catch (err: any) {
+      showToast(`알림 설정 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
 
   const handleSignIn = async () => {
     try {
@@ -2536,6 +2559,18 @@ export default function App() {
             {/* ✨ 오늘: 오늘의 나풀이 + 오늘의 타로 + 오늘의 트랜짓 — 매일 새로 보는 콘텐츠 3종을 한곳에 모음 */}
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
+
+            {/* 매일 알림 (네이티브 앱 전용) */}
+            {isNativePlatform() && (
+              <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  🔔 {notificationsEnabled ? '매일 오전 9시에 알려드리고 있어요' : '매일 오전 9시에 오늘의 나풀이를 알림으로 받아보세요'}
+                </div>
+                <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleToggleNotifications} disabled={notificationsLoading}>
+                  {notificationsLoading ? '처리 중...' : notificationsEnabled ? '알림 끄기' : '알림 켜기'}
+                </button>
+              </div>
+            )}
 
             {/* 오늘의 나풀이 (데일리 운세) */}
             <div className="glass-card-gold" style={{ padding: '20px 22px' }}>
