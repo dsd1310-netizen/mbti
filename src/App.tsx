@@ -30,6 +30,7 @@ import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS
 import { drawDailyTarotCard } from './data/tarotCards';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification } from './utils/notifications';
+import { trackResultViewAndMaybeRequestReview } from './utils/appReview';
 import type { User } from 'firebase/auth';
 
 // 클라우드 동기화(Firebase)는 실제로 필요할 때(로그인 여부 확인/로그인 시도)만 동적으로 불러온다.
@@ -2024,6 +2025,7 @@ export default function App() {
       setResult({ formData: { ...formData }, sajuResult, hourBranch, aiIntro, astrologyResult, astrologyTimeConfidence });
       setIntroError(errMsg);
       setStep('result');
+      void trackResultViewAndMaybeRequestReview();
     };
 
     // 최소 1.5초 로딩 후 실행
