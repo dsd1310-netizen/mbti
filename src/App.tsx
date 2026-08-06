@@ -21,6 +21,8 @@ import {
   generateTransitInterpretation, DailyTransitFortune,
   generateTarotInterpretation,
   generatePairCompatibilityInterpretation,
+  generateFollowUpAnswer, ChatMessage,
+  generateArchetypeMatch, ArchetypeMatch,
 } from './utils/geminiApi';
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
@@ -28,6 +30,7 @@ import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
 import { drawDailyTarotCard, TarotCard } from './data/tarotCards';
+import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
 import { recordTodayVisitAndGetStreak } from './utils/streak';
@@ -101,6 +104,19 @@ type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
 
 const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
 type PillarKey = 'year' | 'month' | 'day' | 'hour';
+
+// PDF 저장 시 섹션 선택 — 12개 개별 항목 대신 8개 큰 단위로 묶음(계획안.md 논의 결과)
+type PdfSectionKey = 'aiCategories' | 'prescriptions' | 'elementSummary' | 'compat' | 'fengshui' | 'fortune' | 'pillars' | 'astrology';
+const PDF_SECTION_META: Record<PdfSectionKey, { label: string; desc: string }> = {
+  aiCategories: { label: '🔮 AI 해석', desc: '성격 · 커리어 · 연애 · 재물 · 닮은 인물' },
+  prescriptions: { label: '🎯 3대 실천 처방전', desc: '' },
+  elementSummary: { label: '🌿 오행 종합 해설', desc: '' },
+  compat: { label: '💑 궁합 조합표', desc: '' },
+  fengshui: { label: '🏡 풍수 수리 가이드', desc: '' },
+  fortune: { label: '🌌 대운 · 세운 & 운세 해설', desc: '' },
+  pillars: { label: '🧭 사주 4기둥 심층 해설', desc: '' },
+  astrology: { label: '🪐 서양 고전점성술 (별자리)', desc: '' },
+};
 
 const MBTI_LIST = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
 
@@ -322,6 +338,20 @@ function addPairCompatHistoryEntry(f: CacheKeyBase, entry: Omit<PairCompatHistor
   localStorage.setItem(pairCompatHistoryKey(f), JSON.stringify(next));
 }
 
+// AI 후속질문(채팅) — 카테고리와 무관하게 "AI 해석" 탭 전체에서 하나의 대화를 공유.
+// 화면에는 최근 CHAT_DISPLAY_LIMIT개까지만 보관하고, 실제 API 호출 시에는 그중에서도
+// 최근 CHAT_CONTEXT_TURNS턴만 다시 프롬프트에 실어 보내 토큰 소모가 무한정 늘지 않게 함.
+function chatCacheKey(f: CacheKeyBase): string {
+  return `saju_chat_${baseKeyId(f)}`;
+}
+const CHAT_DISPLAY_LIMIT = 20; // 메시지 개수(10턴) — 화면·로컬 저장 상한
+const CHAT_CONTEXT_TURNS = 4;  // AI에 다시 실어 보내는 최근 턴 수
+
+// 나와 닮은 인물 AI 매칭카드 — 한번 생성되면 다른 카테고리와 동일하게 캐시.
+function archetypeCacheKey(f: CacheKeyBase, mbti: string): string {
+  return `saju_archetype_${baseKeyId(f)}_${mbti}`;
+}
+
 // Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
 // 아래 값은 실제 키가 아니라, 기존 코드 전반의 `if (!GEMINI_API_KEY)` 활성화 여부 검사를
 // 그대로 유지하기 위한 하위 호환용 상수이며 geminiApi.ts의 저수준 함수에서는 사용하지 않습니다.
@@ -337,7 +367,7 @@ export default function App() {
   const [step, setStep] = useState<Step>(() => (localStorage.getItem(ONBOARDING_SEEN_KEY) ? 'input' : 'onboarding'));
   const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
   const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
-  const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
+  const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions' | 'archetype'>('personality');
   // 🔔 매일 알림(네이티브 앱 전용) — 웹 버전에서는 UI 자체를 노출하지 않음
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => isDailyNotificationEnabled());
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -373,6 +403,15 @@ export default function App() {
   const [categoryLoading, setCategoryLoading] = useState<Partial<Record<AiCategoryKey, boolean>>>({});
   const [prescriptionsData, setPrescriptionsData] = useState<string[] | null>(null);
   const [prescriptionsLoading, setPrescriptionsLoading] = useState(false);
+
+  // 🎭 나와 닮은 인물 AI 매칭카드
+  const [archetypeData, setArchetypeData] = useState<ArchetypeMatch | null>(null);
+  const [archetypeLoading, setArchetypeLoading] = useState(false);
+
+  // 🗨️ AI 후속질문(채팅) — "AI 해석" 탭 전체에서 하나의 대화를 공유
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   // 커리어/연애/재물 생성 전 개인화 질문 답변 (선택 사항, [질문1 답, 질문2 답])
   const [categoryAnswers, setCategoryAnswers] = useState<Partial<Record<QuestionableCategory, [string?, string?]>>>({});
@@ -437,6 +476,13 @@ export default function App() {
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
+
+  // PDF 저장 시 섹션 선택 모달 — 기본값은 전부 체크(기존 "전체 포함" 동작과 동일)
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfSections, setPdfSections] = useState<Record<PdfSectionKey, boolean>>({
+    aiCategories: true, prescriptions: true, elementSummary: true, compat: true,
+    fengshui: true, fortune: true, pillars: true, astrology: true,
+  });
 
   // 🔥 연속 방문일수(스트릭) — 앱을 열 때마다 한 번만 기록(탭과 무관하게 "오늘 앱을 열었는지" 기준)
   const [streakCount, setStreakCount] = useState(0);
@@ -582,6 +628,21 @@ export default function App() {
     } else {
       setPrescriptionsData(null);
     }
+
+    const cachedArchetype = localStorage.getItem(archetypeCacheKey(result.formData, result.formData.mbti));
+    if (cachedArchetype) {
+      try { setArchetypeData(JSON.parse(cachedArchetype)); } catch { setArchetypeData(null); }
+    } else {
+      setArchetypeData(null);
+    }
+  }, [result]);
+
+  // 🗨️ AI 후속질문 대화 캐시 로드
+  useEffect(() => {
+    if (!result) { setChatMessages([]); return; }
+    const cached = localStorage.getItem(chatCacheKey(result.formData));
+    if (cached) { try { setChatMessages(JSON.parse(cached)); } catch { setChatMessages([]); } }
+    else { setChatMessages([]); }
   }, [result]);
 
   // 오행/궁합 종합 해설 캐시 로드
@@ -735,6 +796,75 @@ export default function App() {
     } finally {
       setPrescriptionsLoading(false);
     }
+  };
+
+  // 🎭 나와 닮은 인물 AI 매칭카드 생성
+  const handleGenerateArchetype = async (): Promise<ArchetypeMatch | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setArchetypeLoading(true);
+    try {
+      const data = await generateArchetypeMatch(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.formData.gender,
+        result.formData.mbti,
+        result.sajuResult,
+      );
+      setArchetypeData(data);
+      localStorage.setItem(archetypeCacheKey(result.formData, result.formData.mbti), JSON.stringify(data));
+      return data;
+    } catch (err: any) {
+      showToast(`닮은 인물 매칭 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setArchetypeLoading(false);
+    }
+  };
+
+  // 🗨️ AI 후속질문(채팅) 전송 — 최근 CHAT_CONTEXT_TURNS턴만 컨텍스트로 다시 실어 보냄
+  const handleSendChatMessage = async () => {
+    if (!result) return;
+    const question = chatInput.trim();
+    if (!question) return;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const userMsg: ChatMessage = { role: 'user', text: question };
+    const withUserMsg = [...chatMessages, userMsg];
+    setChatMessages(withUserMsg);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const recentHistory = chatMessages.slice(-CHAT_CONTEXT_TURNS * 2);
+      const answer = await generateFollowUpAnswer(
+        GEMINI_API_KEY,
+        result.formData.name,
+        result.formData.gender,
+        result.formData.mbti,
+        result.sajuResult,
+        recentHistory,
+        question,
+      );
+      const updated = [...withUserMsg, { role: 'assistant', text: answer } as ChatMessage].slice(-CHAT_DISPLAY_LIMIT);
+      setChatMessages(updated);
+      localStorage.setItem(chatCacheKey(result.formData), JSON.stringify(updated));
+    } catch (err: any) {
+      showToast(`답변 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      // 사용자 질문 자체는 화면에 남겨둬 무엇을 물어봤는지 보이게 하고, 다시 입력해 재시도하게 함
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    if (!result) return;
+    setChatMessages([]);
+    localStorage.removeItem(chatCacheKey(result.formData));
   };
 
   // 풍수 수리 가이드 AI 생성 (이름+생년월일 기준 캐싱)
@@ -1502,31 +1632,63 @@ export default function App() {
   // PDF 저장은 "버튼 눌러야 생성" 원칙의 예외로, 아직 생성되지 않은 AI 콘텐츠를 전부 자동 생성한 뒤 포함합니다.
   const handleDownloadPDF = async () => {
     if (!result) return;
+    setPdfModalOpen(false);
     setPdfGenerating(true);
     try {
-      const categoriesForPdf: Partial<Record<AiCategoryKey, CategoryInterpretation>> = { ...categoryData };
-      const categoriesDeepForPdf: Partial<Record<AiCategoryKey, string>> = { ...categoryDeepData };
-      for (const cat of ['personality', 'career', 'romance', 'wealth'] as AiCategoryKey[]) {
-        if (!categoriesForPdf[cat] && GEMINI_API_KEY) {
-          categoriesForPdf[cat] = await handleGenerateCategory(cat, getAnsweredForCategory(cat)) ?? undefined;
+      // 체크 해제한 섹션은 아예 생성 자체를 건너뛰어(API 호출 없음) 시간을 절약함 —
+      // 아래 각 *ForPdf 변수가 null/빈 값이면 뒤의 HTML 조립부는 원래부터 있던
+      // "값이 있을 때만 렌더링" 삼항연산자 덕에 자동으로 그 섹션을 생략함.
+      const categoriesForPdf: Partial<Record<AiCategoryKey, CategoryInterpretation>> = pdfSections.aiCategories ? { ...categoryData } : {};
+      const categoriesDeepForPdf: Partial<Record<AiCategoryKey, string>> = pdfSections.aiCategories ? { ...categoryDeepData } : {};
+      let archetypeForPdf = pdfSections.aiCategories ? archetypeData : null;
+      if (pdfSections.aiCategories) {
+        for (const cat of ['personality', 'career', 'romance', 'wealth'] as AiCategoryKey[]) {
+          if (!categoriesForPdf[cat] && GEMINI_API_KEY) {
+            categoriesForPdf[cat] = await handleGenerateCategory(cat, getAnsweredForCategory(cat)) ?? undefined;
+          }
+          if (!categoriesDeepForPdf[cat] && GEMINI_API_KEY) {
+            categoriesDeepForPdf[cat] = await handleGenerateCategoryDeep(cat, getAnsweredForCategory(cat)) ?? undefined;
+          }
         }
-        if (!categoriesDeepForPdf[cat] && GEMINI_API_KEY) {
-          categoriesDeepForPdf[cat] = await handleGenerateCategoryDeep(cat, getAnsweredForCategory(cat)) ?? undefined;
+        if (!archetypeForPdf && GEMINI_API_KEY) {
+          archetypeForPdf = await handleGenerateArchetype();
         }
       }
-      const prescriptionsForPdf = prescriptionsData || (GEMINI_API_KEY ? await handleGeneratePrescriptions() : null);
-      const elementSummaryForPdf = elementSummaryText || (GEMINI_API_KEY ? await handleGenerateElementSummary() : null);
-      const compatSummaryForPdf = compatSummaryText || (GEMINI_API_KEY ? await handleGenerateCompatSummary() : null);
-      const fengShuiForPdf = fengShuiText || (GEMINI_API_KEY ? await handleGenerateFengShui() : null);
-      const unseForPdf = unseText || (GEMINI_API_KEY ? await handleGenerateUnse() : null);
-      const elementSummaryDeepForPdf = elementSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateElementSummaryDeep() : null);
-      const compatSummaryDeepForPdf = compatSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateCompatSummaryDeep() : null);
-      const fengShuiDeepForPdf = fengShuiDeepText || (GEMINI_API_KEY ? await handleGenerateFengShuiDeep() : null);
-      const unseDeepForPdf = unseDeepText || (GEMINI_API_KEY ? await handleGenerateUnseDeep() : null);
-      const astrologyForPdf = astrologyData || (GEMINI_API_KEY ? await handleGenerateAstrology() : null);
-      const astrologyDeepForPdf = astrologyDeepText || (GEMINI_API_KEY ? await handleGenerateAstrologyDeep() : null);
+      const prescriptionsForPdf = pdfSections.prescriptions
+        ? (prescriptionsData || (GEMINI_API_KEY ? await handleGeneratePrescriptions() : null))
+        : null;
+      const elementSummaryForPdf = pdfSections.elementSummary
+        ? (elementSummaryText || (GEMINI_API_KEY ? await handleGenerateElementSummary() : null))
+        : null;
+      const compatSummaryForPdf = pdfSections.compat
+        ? (compatSummaryText || (GEMINI_API_KEY ? await handleGenerateCompatSummary() : null))
+        : null;
+      const fengShuiForPdf = pdfSections.fengshui
+        ? (fengShuiText || (GEMINI_API_KEY ? await handleGenerateFengShui() : null))
+        : null;
+      const unseForPdf = pdfSections.fortune
+        ? (unseText || (GEMINI_API_KEY ? await handleGenerateUnse() : null))
+        : null;
+      const elementSummaryDeepForPdf = pdfSections.elementSummary
+        ? (elementSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateElementSummaryDeep() : null))
+        : null;
+      const compatSummaryDeepForPdf = pdfSections.compat
+        ? (compatSummaryDeepText || (GEMINI_API_KEY ? await handleGenerateCompatSummaryDeep() : null))
+        : null;
+      const fengShuiDeepForPdf = pdfSections.fengshui
+        ? (fengShuiDeepText || (GEMINI_API_KEY ? await handleGenerateFengShuiDeep() : null))
+        : null;
+      const unseDeepForPdf = pdfSections.fortune
+        ? (unseDeepText || (GEMINI_API_KEY ? await handleGenerateUnseDeep() : null))
+        : null;
+      const astrologyForPdf = pdfSections.astrology
+        ? (astrologyData || (GEMINI_API_KEY ? await handleGenerateAstrology() : null))
+        : null;
+      const astrologyDeepForPdf = pdfSections.astrology
+        ? (astrologyDeepText || (GEMINI_API_KEY ? await handleGenerateAstrologyDeep() : null))
+        : null;
 
-      // 사주 4기둥 AI 심층 해설도 자동 생성
+      // 사주 4기둥 AI 심층 해설도 자동 생성(섹션 체크 시에만)
       const pillarDefs: { key: PillarKey; label: string; pillar: Pillar; staticDesc: string }[] = [
         { key: 'year', label: '연주 (年柱)', pillar: result.sajuResult.yearPillar, staticDesc: '연주는 조상과 초년운을 상징하는 기둥입니다.' },
         { key: 'month', label: '월주 (月柱)', pillar: result.sajuResult.monthPillar, staticDesc: '월주는 부모와 청년운을 상징하는 기둥입니다.' },
@@ -1535,8 +1697,8 @@ export default function App() {
           ? [{ key: 'hour' as PillarKey, label: '시주 (時柱)', pillar: result.sajuResult.hourPillar, staticDesc: result.hourBranch.desc }]
           : []),
       ];
-      const pillarAiForPdf: Partial<Record<PillarKey, string>> = { ...pillarAiData };
-      if (GEMINI_API_KEY) {
+      const pillarAiForPdf: Partial<Record<PillarKey, string>> = pdfSections.pillars ? { ...pillarAiData } : {};
+      if (pdfSections.pillars && GEMINI_API_KEY) {
         for (const def of pillarDefs) {
           if (!pillarAiForPdf[def.key]) {
             try {
@@ -1590,6 +1752,14 @@ export default function App() {
                 ${b.deepData ? `<h3>🔍 심화해석</h3><p>${escapeHtmlBreaks(b.deepData)}</p>` : ''}
               </div>
             ` : '').join('')}
+
+            ${archetypeForPdf ? `
+              <div class="report-block">
+                <h3>🎭 나와 닮은 인물${(() => { const f = ARCHETYPE_FIGURES.find(x => x.id === archetypeForPdf!.figureId); return f ? ` — ${f.name}(${f.origin})` : ''; })()}</h3>
+                <p>${escapeHtml(archetypeForPdf.analysis)}</p>
+                <p class="fact-bomb"><strong>🔥 한줄 정리:</strong> ${escapeHtml(archetypeForPdf.factBomb)}</p>
+              </div>
+            ` : ''}
 
             ${prescriptionsForPdf ? `
               <div class="report-block">
@@ -2325,6 +2495,54 @@ export default function App() {
         </div>
       )}
 
+      {/* 모달 (PDF 저장 시 섹션 선택) */}
+      {pdfModalOpen && (
+        <div className="modal-overlay" onClick={() => setPdfModalOpen(false)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label="PDF 섹션 선택" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setPdfModalOpen(false)}>✕</button>
+            <div style={{ marginBottom: 16 }}>
+              <div className="section-label">📄 PDF 저장</div>
+              <div className="section-title">포함할 내용을 선택해 주세요</div>
+            </div>
+            <div className="space-y-2" style={{ marginBottom: 20 }}>
+              {(Object.keys(PDF_SECTION_META) as PdfSectionKey[]).map(key => (
+                <label
+                  key={key}
+                  className="flex items-center"
+                  style={{ gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', cursor: 'pointer' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={pdfSections[key]}
+                    onChange={(e) => setPdfSections(prev => ({ ...prev, [key]: e.target.checked }))}
+                  />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{PDF_SECTION_META[key].label}</div>
+                    {PDF_SECTION_META[key].desc && (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{PDF_SECTION_META[key].desc}</div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
+              체크 해제한 항목은 생성 자체를 건너뛰어 PDF 저장이 더 빨라져요. 아직 안 만든 콘텐츠가 있으면 선택한 항목만 새로 생성합니다.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                className="btn-primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
+                onClick={handleDownloadPDF}
+                disabled={pdfGenerating || !Object.values(pdfSections).some(Boolean)}
+              >
+                {pdfGenerating ? <span>⏳ 생성 중...</span> : <span>📄 PDF 생성하기</span>}
+              </button>
+              <button className="btn-secondary" onClick={() => setPdfModalOpen(false)}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 모달 (나풀이 다이어리 상세보기) */}
       {diaryDetail && (
         <div className="modal-overlay" onClick={() => setDiaryDetail(null)}>
@@ -2672,7 +2890,7 @@ export default function App() {
                     <button
                       className="btn-secondary"
                       style={{ padding: '10px 14px', fontSize: '13px' }}
-                      onClick={handleDownloadPDF}
+                      onClick={() => setPdfModalOpen(true)}
                       disabled={pdfGenerating}
                     >
                       {pdfGenerating ? '⏳ PDF 생성 중...' : '📄 PDF 저장'}
@@ -3575,6 +3793,7 @@ export default function App() {
                       { id: 'romance', label: '💖 연애/인간관계', icon: '💖' },
                       { id: 'wealth', label: '💰 재물/지출', icon: '💰' },
                       { id: 'prescriptions', label: '🎯 3대 실천 처방전', icon: '🎯' },
+                      { id: 'archetype', label: '🎭 닮은 인물', icon: '🎭' },
                     ].map(t => (
                       <button
                         key={t.id}
@@ -3760,6 +3979,111 @@ export default function App() {
                         )}
                       </div>
                     )}
+
+                    {activeTab === 'archetype' && (
+                      <div className="tab-pane animate-fade-in space-y-4">
+                        {archetypeData ? (() => {
+                          const figure = ARCHETYPE_FIGURES.find(f => f.id === archetypeData.figureId);
+                          return (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <div className="tab-pane-title">🎭 {result.formData.name} 님과 닮은 인물</div>
+                                <button
+                                  className="btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: 11 }}
+                                  onClick={() => addBookmark('닮은 인물', `${result.formData.name}님과 닮은 인물`, `${figure?.name ?? ''}\n\n${archetypeData.analysis}\n\n${archetypeData.factBomb}`)}
+                                >
+                                  🔖 저장
+                                </button>
+                              </div>
+                              {figure && (
+                                <div style={{
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                                  padding: '22px 16px', borderRadius: 16,
+                                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                                  background: 'linear-gradient(150deg, rgba(139,92,246,0.22), rgba(245,200,66,0.14))',
+                                }}>
+                                  <span style={{ fontSize: 48, lineHeight: 1 }}>{figure.emoji}</span>
+                                  <div style={{ fontWeight: 800, fontSize: 18, marginTop: 4 }}>{figure.name}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{figure.origin}</div>
+                                </div>
+                              )}
+                              <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
+                                {archetypeData.analysis}
+                              </p>
+                              <div className="fact-bomb-box">
+                                <div className="fact-bomb-title">🔥 한줄 정리</div>
+                                <div className="fact-bomb-content">{archetypeData.factBomb}</div>
+                              </div>
+                              <button
+                                className="btn-secondary"
+                                style={{ fontSize: 12 }}
+                                onClick={handleGenerateArchetype}
+                                disabled={archetypeLoading}
+                              >
+                                {archetypeLoading ? '다시 뽑는 중...' : '🔄 다시 뽑기'}
+                              </button>
+                            </>
+                          );
+                        })() : (
+                          <div>
+                            <div className="tab-pane-title" style={{ marginBottom: 12 }}>🎭 나와 닮은 인물</div>
+                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                              역사·신화·고전문학 속 인물 중, 사주와 MBTI로 봤을 때 당신과 가장 닮은 한 명을 나풀이가 찾아드려요.
+                            </p>
+                            <button className="btn-primary" onClick={handleGenerateArchetype} disabled={archetypeLoading}>
+                              {archetypeLoading ? <span>✨ 찾는 중...</span> : <span>🎭 닮은 인물 찾기</span>}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 🗨️ AI 후속질문(채팅) — 카테고리와 무관하게 "AI 해석" 탭 전체에서 공유 */}
+                  <div className="glass-card" style={{ padding: '18px 20px' }}>
+                    <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+                      <div>
+                        <div className="section-label">🗨️ 나풀이에게 더 물어보기</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>위 해석을 바탕으로 궁금한 걸 자유롭게 물어보세요</div>
+                      </div>
+                      {chatMessages.length > 0 && (
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 11 }} onClick={handleClearChat}>
+                          🗑️ 대화 초기화
+                        </button>
+                      )}
+                    </div>
+
+                    {chatMessages.length > 0 && (
+                      <div className="space-y-2" style={{ marginBottom: 12, maxHeight: 320, overflowY: 'auto' }}>
+                        {chatMessages.map((msg, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                            <div style={{
+                              maxWidth: '80%', padding: '8px 14px', borderRadius: 14, fontSize: 13, lineHeight: 1.6,
+                              background: msg.role === 'user' ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255,255,255,0.05)',
+                              border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                            }}>
+                              {msg.text}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        className="form-input"
+                        type="text"
+                        placeholder="예: 그럼 이직은 언제가 좋을까요?"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !chatLoading) handleSendChatMessage(); }}
+                        disabled={chatLoading}
+                      />
+                      <button className="btn-primary" style={{ flexShrink: 0, padding: '10px 16px' }} onClick={handleSendChatMessage} disabled={chatLoading || !chatInput.trim()}>
+                        {chatLoading ? '✨' : '전송'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
