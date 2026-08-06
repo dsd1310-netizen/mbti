@@ -19,6 +19,19 @@ const MODELS = [
   'gemini-2.5-pro',
 ];
 
+// [2026-08-06] "심화해석"류(15~20줄 이상 긴 분량 요청)는 실측 결과 gemini-3.6-flash가
+// thinkingBudget을 줘도 여전히 사고 토큰을 많이 써서(17.6초→16.3초 정도로 개선폭이 작음)
+// 느렸던 반면, gemini-3.5-flash-lite는 같은 프롬프트에서 사고 토큰 0으로 5~6초 만에
+// 십신 용어·실생활 예시 요구사항을 전부 충족하는 동등하거나 더 나은 품질의 결과를 냄
+// (직접 비교 재현 완료). 심화해석 계열 호출에서만 이 모델을 1순위로 시도하도록 순서를 바꿈
+// — 자동/버튼 생성형 짧은 콘텐츠(사주 인트로 등)의 기본 폴백 순서(MODELS)는 그대로 유지.
+const DEEP_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-3.6-flash',
+  'gemini-2.5-pro',
+];
+
 // 네이티브 앱(Capacitor)의 웹뷰는 capacitor://localhost 등 로컬 오리진에서 로드되어
 // 상대경로 fetch('/api/gemini')가 실제 배포 서버에 도달하지 못한다 — 네이티브일 때만
 // 배포 도메인 절대경로를 사용(웹은 기존처럼 상대경로 유지). api/gemini.ts의 Origin
@@ -838,6 +851,7 @@ ${mbtiNote || '해당 카테고리는 MBTI 데이터를 참고하지 않습니�
     `${DEEP_CATEGORY_LABEL[category]}에 대한 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.`,
     8192,
     45000,
+    DEEP_MODELS,
   );
 }
 
@@ -867,7 +881,7 @@ export async function generateFengShuiDeepInterpretation(
 3. 십신 분포도 참고하여, 그 기운을 북돋우거나 눌러줄 수 있는 생활 습관을 1~2가지 자연스럽게 곁들이세요.
 4. 다정한 전문가의 어조로 15~20줄 이상의 충분히 긴 한글 텍스트로 설명하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '풍수 심화 가이드를 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+  return callGeminiPlainApi(apiKey, prompt, '풍수 심화 가이드를 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
 }
 
 /**
@@ -905,7 +919,7 @@ export async function generateFortuneDeepInterpretation(
 4. 십신 분포도 참고하여 이 대운의 흐름과 어떻게 맞물리는지 자연스럽게 곁들이세요.
 5. 다정하지만 확신 있는 어조로, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '운세 흐름 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+  return callGeminiPlainApi(apiKey, prompt, '운세 흐름 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
 }
 
 /**
@@ -931,7 +945,7 @@ export async function generateElementSummaryDeepInterpretation(
 4. 부족한 오행을 일상에서 보완할 수 있는 구체적인 방법을 최소 2가지 이상 제안하세요.
 5. 한자 용어 대신 일상적인 비유를 사용하고, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '오행 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+  return callGeminiPlainApi(apiKey, prompt, '오행 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
 }
 
 /**
@@ -964,7 +978,7 @@ export async function generateCompatibilitySummaryDeepInterpretation(
 4. 십신 분포도 참고하여, 이 사람이 관계에서 어떤 태도를 보이는 경향이 있는지 자연스럽게 곁들이세요.
 5. 전체 15~20줄 이상의 충분히 긴, 친근하고 유쾌한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '궁합 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+  return callGeminiPlainApi(apiKey, prompt, '궁합 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
 }
 
 // ─── 서양 고전점성술(홀사인) 종합 해설 ──────────────────────────────────────
@@ -1081,7 +1095,7 @@ ${formatAstrologyAspects(result)}
 6. 존댓말 문체를 유지하되, 딱딱한 보고서가 아니라 재미있게 몰입해서 읽히는 칼럼처럼 작성하세요.
 7. 분량은 15~20줄 이상으로 충분히 길게 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000);
+  return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
 }
 
 // ─── 오늘의 트랜짓 운세 ─────────────────────────────────────────
@@ -1195,12 +1209,13 @@ async function callGeminiPlainApi(
   fallbackText: string,
   maxOutputTokens: number = 2048,
   timeoutMs: number = 20000,
+  models: string[] = MODELS,
 ): Promise<string> {
   let lastError: Error | null = null;
   const maxRetries = 3;
 
   try {
-    for (const model of MODELS) {
+    for (const model of models) {
       // Gemini API 키는 클라이언트에 절대 노출하지 않는다 — 서버리스 프록시(api/gemini.ts)를 통해서만 호출.
       const url = `${API_BASE}/api/gemini?model=${model}`;
 
