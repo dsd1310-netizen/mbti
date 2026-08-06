@@ -260,6 +260,14 @@ function elementSummaryDeepCacheKey(f: CacheKeyBase): string {
 function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
   return `saju_compatsummary_${baseKeyId(f)}_deep`;
 }
+
+// [2026-08-06] 심화해석 계열은 실패 시 폴백 문구("...지금은 불러올 수 없습니다...")가
+// 실제 콘텐츠인 것처럼 캐시되던 버그가 있었음(geminiApi.ts throwOnFailure로 향후 재발은 막음).
+// 다만 그 수정 이전에 이미 localStorage에 저장된 사용자의 기존 캐시는 여전히 이 문구를 담고
+// 있을 수 있어, 캐시를 읽을 때 이 패턴이면 "생성 안 됨"으로 취급해 버튼이 다시 뜨게 함.
+function isStaleDeepFallbackText(text: string | null): boolean {
+  return !!text && text.endsWith('지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.');
+}
 function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
   return `saju_pillar_${key}_${baseKeyId(f)}`;
 }
@@ -280,16 +288,18 @@ function todayDateStr(): string {
 
 // "오늘의 타로" 카드 비주얼(8-2) — 실제 카드 이미지 자산 없이, 수트(4원소)별 그라디언트·강조색으로
 // 카드다운 느낌을 냄. 메이저 아르카나는 이 앱 전체 테마와 맞춘 보라/골드 톤.
-function tarotCardTheme(card: TarotCard): { gradient: string; accent: string } {
+// "오늘의 타로" 카드 비주얼(8-2/8-3) — 수트(4원소)별 강조색·짙은색·글로우 세트.
+// .persona-card 공통 프레임(App.css)에 CSS 커스텀 프로퍼티로 꽂아 넣어 메달리온 스타일을 만듦.
+function tarotCardTheme(card: TarotCard): { accent: string; accentDark: string; glow: string } {
   if (card.arcana === 'major') {
-    return { gradient: 'linear-gradient(150deg, rgba(139,92,246,0.30), rgba(245,200,66,0.18))', accent: '#c4b5fd' };
+    return { accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.5)' };
   }
   switch (card.suit) {
-    case 'wands': return { gradient: 'linear-gradient(150deg, rgba(249,115,22,0.30), rgba(220,38,38,0.16))', accent: '#fb923c' };
-    case 'cups': return { gradient: 'linear-gradient(150deg, rgba(59,130,246,0.30), rgba(14,165,233,0.16))', accent: '#60a5fa' };
-    case 'swords': return { gradient: 'linear-gradient(150deg, rgba(148,163,184,0.30), rgba(226,232,240,0.14))', accent: '#cbd5e1' };
-    case 'pentacles': return { gradient: 'linear-gradient(150deg, rgba(34,197,94,0.30), rgba(101,163,13,0.16))', accent: '#4ade80' };
-    default: return { gradient: 'linear-gradient(150deg, rgba(139,92,246,0.30), rgba(245,200,66,0.18))', accent: '#c4b5fd' };
+    case 'wands': return { accent: '#fb923c', accentDark: '#9a3412', glow: 'rgba(251, 146, 60, 0.5)' };
+    case 'cups': return { accent: '#60a5fa', accentDark: '#1e40af', glow: 'rgba(96, 165, 250, 0.5)' };
+    case 'swords': return { accent: '#cbd5e1', accentDark: '#475569', glow: 'rgba(203, 213, 225, 0.4)' };
+    case 'pentacles': return { accent: '#4ade80', accentDark: '#166534', glow: 'rgba(74, 222, 128, 0.5)' };
+    default: return { accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.5)' };
   }
 }
 function dailyFortuneCacheKey(f: CacheKeyBase, dateStr: string): string {
@@ -599,8 +609,8 @@ export default function App() {
     if (!result) { setFengShuiText(null); setUnseText(null); setFengShuiDeepText(null); setUnseDeepText(null); return; }
     setFengShuiText(localStorage.getItem(fengShuiCacheKey(result.formData)));
     setUnseText(localStorage.getItem(unseCacheKey(result.formData, new Date().getFullYear())));
-    setFengShuiDeepText(localStorage.getItem(fengShuiDeepCacheKey(result.formData)));
-    setUnseDeepText(localStorage.getItem(unseDeepCacheKey(result.formData, new Date().getFullYear())));
+    setFengShuiDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(fengShuiDeepCacheKey(result.formData))));
+    setUnseDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(unseDeepCacheKey(result.formData, new Date().getFullYear()))));
   }, [result]);
 
   // 💑 정밀 궁합 "이전에 비교한 상대" 이력 로드
@@ -617,7 +627,7 @@ export default function App() {
       const cached = localStorage.getItem(categoryCacheKey(result.formData, result.formData.mbti, cat));
       if (cached) { try { loaded[cat] = JSON.parse(cached); } catch {} }
       const cachedDeep = localStorage.getItem(categoryDeepCacheKey(result.formData, result.formData.mbti, cat));
-      if (cachedDeep) loadedDeep[cat] = cachedDeep;
+      if (cachedDeep && !isStaleDeepFallbackText(cachedDeep)) loadedDeep[cat] = cachedDeep;
     });
     setCategoryData(loaded);
     setCategoryDeepData(loadedDeep);
@@ -650,8 +660,8 @@ export default function App() {
     if (!result) { setElementSummaryText(null); setCompatSummaryText(null); setElementSummaryDeepText(null); setCompatSummaryDeepText(null); return; }
     setElementSummaryText(localStorage.getItem(elementSummaryCacheKey(result.formData)));
     setCompatSummaryText(localStorage.getItem(compatSummaryCacheKey(result.formData)));
-    setElementSummaryDeepText(localStorage.getItem(elementSummaryDeepCacheKey(result.formData)));
-    setCompatSummaryDeepText(localStorage.getItem(compatSummaryDeepCacheKey(result.formData)));
+    setElementSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(elementSummaryDeepCacheKey(result.formData))));
+    setCompatSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(compatSummaryDeepCacheKey(result.formData))));
   }, [result]);
 
   // 🪐 별자리(서양점성술) AI 해설 캐시 로드
@@ -660,7 +670,7 @@ export default function App() {
     const cached = localStorage.getItem(astrologyCacheKey(result.formData, result.formData.birthCity));
     if (cached) { try { setAstrologyData(JSON.parse(cached)); } catch { setAstrologyData(null); } }
     else { setAstrologyData(null); }
-    setAstrologyDeepText(localStorage.getItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity)));
+    setAstrologyDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity))));
   }, [result]);
 
   // 오늘의 나풀이(데일리 운세) 캐시 로드 (오늘 날짜 기준)
@@ -3135,28 +3145,25 @@ export default function App() {
               {tarotData ? (() => {
                 const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${todayDateStr()}`;
                 const { card, reversed } = drawDailyTarotCard(seed);
-                const { gradient, accent } = tarotCardTheme(card);
+                const { accent, accentDark, glow } = tarotCardTheme(card);
                 return (
                   <>
                     <div
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                        marginBottom: 14, padding: '22px 16px',
-                        borderRadius: 16, border: `1px solid ${accent}55`, background: gradient,
-                        boxShadow: `0 0 24px -8px ${accent}66`,
-                      }}
+                      className="persona-card"
+                      style={{ marginBottom: 14, '--accent': accent, '--accent-dark': accentDark, '--accent-glow': glow, '--accent-text': accent } as React.CSSProperties}
                     >
-                      <span style={{ fontSize: 48, lineHeight: 1, transform: reversed ? 'rotate(180deg)' : undefined, transition: 'transform 0.3s' }}>
-                        {card.emoji}
-                      </span>
-                      <div style={{ fontWeight: 800, fontSize: 16, marginTop: 4 }}>{card.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
-                        background: `${accent}22`, color: accent, marginTop: 4,
-                      }}>
-                        {reversed ? '🔄 역방향' : '✨ 정방향'}
-                      </span>
+                      <div className="persona-card-medallion">
+                        <span
+                          className="persona-card-emoji"
+                          style={{ display: 'inline-block', transform: reversed ? 'rotate(180deg)' : undefined, transition: 'transform 0.3s' }}
+                        >
+                          {card.emoji}
+                        </span>
+                      </div>
+                      <div className="persona-card-name">{card.name}</div>
+                      <div className="persona-card-divider" />
+                      <div className="persona-card-origin">{card.nameEn}</div>
+                      <div className="persona-card-badge">{reversed ? '🔄 역방향' : '✨ 정방향'}</div>
                     </div>
                     {card.tagline && (
                       <p style={{ fontSize: 12, color: 'var(--gold)', fontStyle: 'italic', margin: '0 0 10px' }}>
@@ -3913,7 +3920,7 @@ export default function App() {
                                               key={opt.value}
                                               type="button"
                                               className={`hour-btn ${selected ? 'selected' : ''}`}
-                                              style={{ padding: '8px 12px', fontSize: 12, flex: 'none' }}
+                                              style={{ padding: '8px 12px', fontSize: 12, flex: 'none', color: selected ? 'var(--gold)' : 'var(--silver)' }}
                                               onClick={() => setCategoryAnswers(prev => {
                                                 const cur: [string?, string?] = prev[cat] ?? [undefined, undefined];
                                                 const next: [string?, string?] = [cur[0], cur[1]];
@@ -3997,15 +4004,17 @@ export default function App() {
                                 </button>
                               </div>
                               {figure && (
-                                <div style={{
-                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                                  padding: '22px 16px', borderRadius: 16,
-                                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                                  background: 'linear-gradient(150deg, rgba(139,92,246,0.22), rgba(245,200,66,0.14))',
-                                }}>
-                                  <span style={{ fontSize: 48, lineHeight: 1 }}>{figure.emoji}</span>
-                                  <div style={{ fontWeight: 800, fontSize: 18, marginTop: 4 }}>{figure.name}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{figure.origin}</div>
+                                <div
+                                  className="persona-card"
+                                  style={{ '--accent': '#8b5cf6', '--accent-dark': '#4c1d95', '--accent-glow': 'rgba(139, 92, 246, 0.45)', '--accent-text': 'var(--purple-light)' } as React.CSSProperties}
+                                >
+                                  <div className="persona-card-medallion">
+                                    <span className="persona-card-emoji">{figure.emoji}</span>
+                                  </div>
+                                  <div className="persona-card-name">{figure.name}</div>
+                                  <div className="persona-card-divider" />
+                                  <div className="persona-card-origin">{figure.origin}</div>
+                                  <div className="persona-card-badge">{figure.traits[0]}</div>
                                 </div>
                               )}
                               <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
@@ -4079,8 +4088,9 @@ export default function App() {
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !chatLoading) handleSendChatMessage(); }}
                         disabled={chatLoading}
+                        style={{ flex: 1, minWidth: 0 }}
                       />
-                      <button className="btn-primary" style={{ flexShrink: 0, padding: '10px 16px' }} onClick={handleSendChatMessage} disabled={chatLoading || !chatInput.trim()}>
+                      <button className="btn-primary" style={{ flexShrink: 0, width: 'auto', padding: '10px 16px' }} onClick={handleSendChatMessage} disabled={chatLoading || !chatInput.trim()}>
                         {chatLoading ? '✨' : '전송'}
                       </button>
                     </div>

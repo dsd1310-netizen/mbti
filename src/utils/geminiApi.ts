@@ -853,6 +853,7 @@ ${mbtiNote || '해당 카테고리는 MBTI 데이터를 참고하지 않습니�
     8192,
     45000,
     DEEP_MODELS,
+    true,
   );
 }
 
@@ -882,7 +883,7 @@ export async function generateFengShuiDeepInterpretation(
 3. 십신 분포도 참고하여, 그 기운을 북돋우거나 눌러줄 수 있는 생활 습관을 1~2가지 자연스럽게 곁들이세요.
 4. 다정한 전문가의 어조로 15~20줄 이상의 충분히 긴 한글 텍스트로 설명하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '풍수 심화 가이드를 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
+  return callGeminiPlainApi(apiKey, prompt, '풍수 심화 가이드를 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 /**
@@ -920,7 +921,7 @@ export async function generateFortuneDeepInterpretation(
 4. 십신 분포도 참고하여 이 대운의 흐름과 어떻게 맞물리는지 자연스럽게 곁들이세요.
 5. 다정하지만 확신 있는 어조로, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '운세 흐름 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
+  return callGeminiPlainApi(apiKey, prompt, '운세 흐름 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 /**
@@ -946,7 +947,7 @@ export async function generateElementSummaryDeepInterpretation(
 4. 부족한 오행을 일상에서 보완할 수 있는 구체적인 방법을 최소 2가지 이상 제안하세요.
 5. 한자 용어 대신 일상적인 비유를 사용하고, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '오행 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
+  return callGeminiPlainApi(apiKey, prompt, '오행 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 /**
@@ -979,7 +980,7 @@ export async function generateCompatibilitySummaryDeepInterpretation(
 4. 십신 분포도 참고하여, 이 사람이 관계에서 어떤 태도를 보이는 경향이 있는지 자연스럽게 곁들이세요.
 5. 전체 15~20줄 이상의 충분히 긴, 친근하고 유쾌한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '궁합 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
+  return callGeminiPlainApi(apiKey, prompt, '궁합 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 // ─── 서양 고전점성술(홀사인) 종합 해설 ──────────────────────────────────────
@@ -1096,7 +1097,7 @@ ${formatAstrologyAspects(result)}
 6. 존댓말 문체를 유지하되, 딱딱한 보고서가 아니라 재미있게 몰입해서 읽히는 칼럼처럼 작성하세요.
 7. 분량은 15~20줄 이상으로 충분히 길게 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS);
+  return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 // ─── 오늘의 트랜짓 운세 ─────────────────────────────────────────
@@ -1243,7 +1244,7 @@ ${name} 님: ${question}
 3. 질문이 사주/MBTI/성격/연애/커리어 등과 무관한 엉뚱한 내용이면, 가볍게 넘기면서 자연스럽게 본래 주제로 돌아오세요.
 4. JSON이나 마크다운 없이 일반 텍스트로 바로 답변하세요.`;
 
-  return callGeminiPlainApi(apiKey, prompt, '지금은 답변을 가져올 수 없어요. 잠시 후 다시 시도해 주세요.', 1024, 20000);
+  return callGeminiPlainApi(apiKey, prompt, '지금은 답변을 가져올 수 없어요. 잠시 후 다시 시도해 주세요.', 1024, 20000, MODELS, true);
 }
 
 // ─── 나와 닮은 인물 AI 매칭카드 ────────────────────────────────────
@@ -1333,6 +1334,14 @@ async function callGeminiPlainApi(
   maxOutputTokens: number = 2048,
   timeoutMs: number = 20000,
   models: string[] = MODELS,
+  // [2026-08-06] 실사용 버그: "심화해석" 계열은 fallbackText가 실제 콘텐츠가 아니라
+  // "지금은 불러올 수 없습니다" 같은 에러 문구인데, 이 함수가 실패 시에도 그 문구를
+  // 정상 반환값처럼 돌려주다 보니 호출부(App.tsx)가 성공으로 착각해 그 문구를 그대로
+  // localStorage에 캐시해버리고, 재시도 버튼도 없이 영구히 그 문구만 보이는 버그가 있었음.
+  // throwOnFailure=true인 호출부는 실패 시 예외를 던져, 기존에도 있던 호출부의 catch(토스트
+  // 안내 + state 미설정 + 버튼 유지)가 정상 동작하게 함. 반대로 타로/풍수(짧은 버전) 등
+  // fallbackText 자체가 그럭저럭 쓸만한 정적 콘텐츠인 함수들은 기존처럼 조용히 대체됨.
+  throwOnFailure: boolean = false,
 ): Promise<string> {
   let lastError: Error | null = null;
   const maxRetries = 3;
@@ -1402,12 +1411,15 @@ async function callGeminiPlainApi(
   } catch (err: any) {
     if (err instanceof NonRetryableApiError) {
       // 재시도해도 절대 성공할 수 없는 오류(설정 누락/Origin 불일치 등) — 나머지 attempt/model을
-      // 다 소진할 때까지 기다리지 않고 즉시 폴백 텍스트로 대체.
+      // 다 소진할 때까지 기다리지 않고 즉시 실패 처리.
+      if (throwOnFailure) throw err;
       console.warn('[GeminiAPI] 재시도 불가 오류, 폴백 콘텐츠로 대체:', err.message);
       return fallbackText;
     }
     throw err;
   }
 
-  console.warn('All Gemini models failed:', lastError?.message); return fallbackText;
+  console.warn('All Gemini models failed:', lastError?.message);
+  if (throwOnFailure) throw lastError || new Error('현재 나풀이 서버 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+  return fallbackText;
 }
