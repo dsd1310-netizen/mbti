@@ -163,6 +163,12 @@ async function callGeminiJsonApi<T>(
               temperature: 0.8,
               maxOutputTokens,
               responseMimeType: 'application/json',
+              // [2026-08-06] 로딩 체감 속도 개선: 실측 결과 이 앱이 쓰는 "사고형" 모델은 답변
+              // 자체보다 훨씬 많은 숨은 "사고(thinking)" 토큰을 먼저 소모함(짧은 소개글 하나에
+              // 응답 405토큰 대비 사고 2315토큰, 15.8초 소요를 실측). thinkingBudget을 낮게
+              // 잡으면(0은 이 모델에서 400 오류라 안 됨) 같은 프롬프트가 3~4초대로 줄어들면서도
+              // JSON 품질은 그대로였음 — 값을 완전히 없애지 않고 여유 있게 512로 제한.
+              thinkingConfig: { thinkingBudget: 512 },
             },
           }),
           signal: controller.signal,
@@ -1215,6 +1221,7 @@ async function callGeminiPlainApi(
               generationConfig: {
                 temperature: 0.8,
                 maxOutputTokens,
+                thinkingConfig: { thinkingBudget: 512 },
               },
             }),
             signal: controller.signal,
