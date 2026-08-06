@@ -27,9 +27,10 @@ import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
-import { drawDailyTarotCard } from './data/tarotCards';
+import { drawDailyTarotCard, TarotCard } from './data/tarotCards';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
-import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification } from './utils/notifications';
+import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
+import { recordTodayVisitAndGetStreak } from './utils/streak';
 import { trackResultViewAndMaybeRequestReview } from './utils/appReview';
 import type { User } from 'firebase/auth';
 
@@ -260,6 +261,21 @@ function todayDateStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+// "오늘의 타로" 카드 비주얼(8-2) — 실제 카드 이미지 자산 없이, 수트(4원소)별 그라디언트·강조색으로
+// 카드다운 느낌을 냄. 메이저 아르카나는 이 앱 전체 테마와 맞춘 보라/골드 톤.
+function tarotCardTheme(card: TarotCard): { gradient: string; accent: string } {
+  if (card.arcana === 'major') {
+    return { gradient: 'linear-gradient(150deg, rgba(139,92,246,0.30), rgba(245,200,66,0.18))', accent: '#c4b5fd' };
+  }
+  switch (card.suit) {
+    case 'wands': return { gradient: 'linear-gradient(150deg, rgba(249,115,22,0.30), rgba(220,38,38,0.16))', accent: '#fb923c' };
+    case 'cups': return { gradient: 'linear-gradient(150deg, rgba(59,130,246,0.30), rgba(14,165,233,0.16))', accent: '#60a5fa' };
+    case 'swords': return { gradient: 'linear-gradient(150deg, rgba(148,163,184,0.30), rgba(226,232,240,0.14))', accent: '#cbd5e1' };
+    case 'pentacles': return { gradient: 'linear-gradient(150deg, rgba(34,197,94,0.30), rgba(101,163,13,0.16))', accent: '#4ade80' };
+    default: return { gradient: 'linear-gradient(150deg, rgba(139,92,246,0.30), rgba(245,200,66,0.18))', accent: '#c4b5fd' };
+  }
+}
 function dailyFortuneCacheKey(f: CacheKeyBase, dateStr: string): string {
   return `saju_daily_${baseKeyId(f)}_${dateStr}`;
 }
@@ -271,6 +287,39 @@ function tarotCacheKey(f: CacheKeyBase, dateStr: string): string {
 }
 function pairCompatCacheKey(f: CacheKeyBase, partnerName: string, partnerBirthYear: string, partnerBirthMonth: string, partnerBirthDay: string, partnerGender: string): string {
   return `saju_paircompat_${baseKeyId(f)}_${partnerName}_${partnerBirthYear}${partnerBirthMonth}${partnerBirthDay}_${partnerGender}`;
+}
+
+// 8-1: "이전에 비교한 상대" 이력 — 본인(f) 기준으로 지금까지 비교해본 상대 목록을 별도로 기록해둬서,
+// 매번 새로 폼을 입력하지 않고도 예전 결과를 바로 다시 볼 수 있게 함(캐시 자체는 이미 상대별로
+// 분리돼 있었지만, "무슨 상대를 봤었는지" 목록을 보여줄 데가 없었음).
+interface PairCompatHistoryEntry {
+  partnerName: string;
+  partnerBirthYear: string;
+  partnerBirthMonth: string;
+  partnerBirthDay: string;
+  partnerGender: string;
+  comparedAt: number;
+}
+function pairCompatHistoryKey(f: CacheKeyBase): string {
+  return `saju_paircompat_history_${baseKeyId(f)}`;
+}
+function getPairCompatHistory(f: CacheKeyBase): PairCompatHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(pairCompatHistoryKey(f));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function addPairCompatHistoryEntry(f: CacheKeyBase, entry: Omit<PairCompatHistoryEntry, 'comparedAt'>): void {
+  const existing = getPairCompatHistory(f).filter(e =>
+    !(e.partnerName === entry.partnerName && e.partnerBirthYear === entry.partnerBirthYear
+      && e.partnerBirthMonth === entry.partnerBirthMonth && e.partnerBirthDay === entry.partnerBirthDay
+      && e.partnerGender === entry.partnerGender)
+  );
+  const next = [{ ...entry, comparedAt: Date.now() }, ...existing].slice(0, 10); // 최근 10명까지만 보관
+  localStorage.setItem(pairCompatHistoryKey(f), JSON.stringify(next));
 }
 
 // Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
@@ -292,6 +341,7 @@ export default function App() {
   // 🔔 매일 알림(네이티브 앱 전용) — 웹 버전에서는 UI 자체를 노출하지 않음
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => isDailyNotificationEnabled());
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationHour, setNotificationHour] = useState(() => getNotificationHour());
   const [formData, setFormData] = useState<FormData>({
     name: '',
     birthYear: '1995',
@@ -342,6 +392,7 @@ export default function App() {
   const [compatSummaryLoading, setCompatSummaryLoading] = useState(false);
   const [dailyFortuneData, setDailyFortuneData] = useState<DailyFortune | null>(null);
   const [dailyFortuneLoading, setDailyFortuneLoading] = useState(false);
+  const [dailyFortuneFailed, setDailyFortuneFailed] = useState(false);
 
   // 심화해석(🔍 십신·MBTI 상세 근거, 3배 이상 분량) — 8개 섹션 공통, "_deep" 캐시로 별도 저장
   const [categoryDeepData, setCategoryDeepData] = useState<Partial<Record<AiCategoryKey, string>>>({});
@@ -364,10 +415,12 @@ export default function App() {
   // 🔮 오늘의 트랜짓 운세
   const [transitData, setTransitData] = useState<DailyTransitFortune | null>(null);
   const [transitLoading, setTransitLoading] = useState(false);
+  const [transitFailed, setTransitFailed] = useState(false);
 
   // 🃏 오늘의 타로
   const [tarotData, setTarotData] = useState<string | null>(null);
   const [tarotLoading, setTarotLoading] = useState(false);
+  const [tarotFailed, setTarotFailed] = useState(false);
 
   // 💑 정밀 궁합(실제 2인 비교) — 상대방 정보 입력
   const [partnerFormOpen, setPartnerFormOpen] = useState(false);
@@ -380,13 +433,21 @@ export default function App() {
   const [pairCompare, setPairCompare] = useState<PairCompatibilityResult | null>(null);
   const [pairCompatText, setPairCompatText] = useState<string | null>(null);
   const [pairCompatLoading, setPairCompatLoading] = useState(false);
+  const [pairCompatHistory, setPairCompatHistory] = useState<PairCompatHistoryEntry[]>([]);
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
 
+  // 🔥 연속 방문일수(스트릭) — 앱을 열 때마다 한 번만 기록(탭과 무관하게 "오늘 앱을 열었는지" 기준)
+  const [streakCount, setStreakCount] = useState(0);
+
   useEffect(() => {
     const savedBm = localStorage.getItem('saju_bookmarks');
     if (savedBm) { try { setBookmarks(JSON.parse(savedBm)); } catch {} }
+  }, []);
+
+  useEffect(() => {
+    setStreakCount(recordTodayVisitAndGetStreak(todayDateStr()));
   }, []);
 
   // 클라우드 동기화(선택 기능): 로그인 상태 구독 + 로그인 시 로컬↔클라우드 다이어리 기록 병합
@@ -428,12 +489,28 @@ export default function App() {
         setNotificationsEnabled(false);
         showToast('매일 알림을 껐어요');
       } else {
-        const granted = await enableDailyNotification();
+        const granted = await enableDailyNotification(notificationHour);
         setNotificationsEnabled(granted);
-        showToast(granted ? '매일 오전 9시에 알려드릴게요 🔔' : '알림 권한이 허용되지 않았어요');
+        showToast(granted ? `매일 ${notificationHour}시에 알려드릴게요 🔔` : '알림 권한이 허용되지 않았어요');
       }
     } catch (err: any) {
       showToast(`알림 설정 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  // 알림 시간 변경 — 이미 켜져 있으면 새 시각으로 즉시 재예약, 꺼져 있으면 값만 저장해뒀다가 다음에 켤 때 반영
+  const handleChangeNotificationHour = async (hour: number) => {
+    setNotificationHour(hour);
+    if (!notificationsEnabled) return;
+    setNotificationsLoading(true);
+    try {
+      const granted = await enableDailyNotification(hour);
+      setNotificationsEnabled(granted);
+      showToast(granted ? `알림 시각을 ${hour}시로 변경했어요 🔔` : '알림 권한이 허용되지 않았어요');
+    } catch (err: any) {
+      showToast(`알림 시각 변경 실패: ${err?.message ?? '알 수 없는 오류'}`);
     } finally {
       setNotificationsLoading(false);
     }
@@ -478,6 +555,11 @@ export default function App() {
     setUnseText(localStorage.getItem(unseCacheKey(result.formData, new Date().getFullYear())));
     setFengShuiDeepText(localStorage.getItem(fengShuiDeepCacheKey(result.formData)));
     setUnseDeepText(localStorage.getItem(unseDeepCacheKey(result.formData, new Date().getFullYear())));
+  }, [result]);
+
+  // 💑 정밀 궁합 "이전에 비교한 상대" 이력 로드
+  useEffect(() => {
+    setPairCompatHistory(result ? getPairCompatHistory(result.formData) : []);
   }, [result]);
 
   // AI 해석 4개 카테고리 + 처방전 캐시 로드
@@ -940,6 +1022,7 @@ export default function App() {
       return null;
     }
     setTransitLoading(true);
+    setTransitFailed(false);
     try {
       const transits = calculateTodayTransits(result.astrologyResult);
       const data = await generateTransitInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult, transits);
@@ -949,6 +1032,7 @@ export default function App() {
       return data;
     } catch (err: any) {
       showToast(`오늘의 트랜짓 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      setTransitFailed(true);
       return null;
     } finally {
       setTransitLoading(false);
@@ -963,6 +1047,7 @@ export default function App() {
       return null;
     }
     setTarotLoading(true);
+    setTarotFailed(false);
     try {
       const dateStr = todayDateStr();
       const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${dateStr}`;
@@ -974,23 +1059,34 @@ export default function App() {
       return text;
     } catch (err: any) {
       showToast(`오늘의 타로 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      setTarotFailed(true);
       return null;
     } finally {
       setTarotLoading(false);
     }
   };
 
-  // 💑 정밀 궁합(실제 2인 비교) — 상대방 생년월일로 실제 사주를 산출해 비교
-  const handleComparePair = async () => {
+  // 💑 정밀 궁합(실제 2인 비교) — 상대방 생년월일로 실제 사주를 산출해 비교.
+  // override를 주면 폼 state 대신 그 값을 사용 — "이전에 비교한 상대" 이력에서 바로 재조회할 때,
+  // setState 직후 같은 틱에 최신 값을 곧바로 읽을 수 없는 React state 타이밍 문제를 피하기 위함.
+  const handleComparePair = async (override?: {
+    partnerName: string; partnerBirthYear: string; partnerBirthMonth: string; partnerBirthDay: string; partnerGender: string;
+  }) => {
     if (!result) return;
     if (!GEMINI_API_KEY) {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
-    if (!partnerName.trim()) { showToast('상대방 이름을 입력해 주세요!'); return; }
-    const py = parseInt(partnerBirthYear);
-    const pm = parseInt(partnerBirthMonth);
-    const pd = parseInt(partnerBirthDay);
+    const pName = override?.partnerName ?? partnerName;
+    const pBirthYear = override?.partnerBirthYear ?? partnerBirthYear;
+    const pBirthMonth = override?.partnerBirthMonth ?? partnerBirthMonth;
+    const pBirthDay = override?.partnerBirthDay ?? partnerBirthDay;
+    const pGender = override?.partnerGender ?? partnerGender;
+
+    if (!pName.trim()) { showToast('상대방 이름을 입력해 주세요!'); return; }
+    const py = parseInt(pBirthYear);
+    const pm = parseInt(pBirthMonth);
+    const pd = parseInt(pBirthDay);
     if (!py || !pm || !pd) { showToast('상대방 생년월일을 모두 입력해 주세요!'); return; }
     const parsedDate = new Date(py, pm - 1, pd);
     const isRealDate = parsedDate.getFullYear() === py && parsedDate.getMonth() === pm - 1 && parsedDate.getDate() === pd;
@@ -998,13 +1094,18 @@ export default function App() {
 
     setPairCompatLoading(true);
     try {
-      const sajuB = calculateSaju(py, pm, pd, '오시', partnerGender, true);
+      const sajuB = calculateSaju(py, pm, pd, '오시', pGender, true);
       const compare = comparePillars(result.sajuResult, sajuB);
       setPairSajuB(sajuB);
       setPairCompare(compare);
 
+      // 8-1: 이 상대와 비교했다는 사실을 이력에 남겨서, 다음에 "이전에 비교한 상대" 목록에서
+      // 폼을 다시 입력하지 않고 바로 다시 볼 수 있게 함(성공/실패와 무관하게, 시도한 조합 자체를 기록).
+      addPairCompatHistoryEntry(result.formData, { partnerName: pName, partnerBirthYear: pBirthYear, partnerBirthMonth: pBirthMonth, partnerBirthDay: pBirthDay, partnerGender: pGender });
+      setPairCompatHistory(getPairCompatHistory(result.formData));
+
       // 같은 상대와 이미 비교해본 적 있으면 캐시를 재사용(API 재호출 없이 바로 표시)
-      const cacheKey = pairCompatCacheKey(result.formData, partnerName, partnerBirthYear, partnerBirthMonth, partnerBirthDay, partnerGender);
+      const cacheKey = pairCompatCacheKey(result.formData, pName, pBirthYear, pBirthMonth, pBirthDay, pGender);
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         try {
@@ -1019,20 +1120,28 @@ export default function App() {
       const text = await generatePairCompatibilityInterpretation(
         GEMINI_API_KEY,
         result.formData.name, result.formData.gender, result.sajuResult,
-        partnerName, partnerGender, sajuB,
+        pName, pGender, sajuB,
         compare,
       );
       setPairCompatText(text);
-      localStorage.setItem(
-        pairCompatCacheKey(result.formData, partnerName, partnerBirthYear, partnerBirthMonth, partnerBirthDay, partnerGender),
-        JSON.stringify({ text, sajuB, compare }),
-      );
-      addBookmark('정밀 궁합', `${result.formData.name}님 × ${partnerName}님 정밀 궁합`, text);
+      localStorage.setItem(cacheKey, JSON.stringify({ text, sajuB, compare }));
+      addBookmark('정밀 궁합', `${result.formData.name}님 × ${pName}님 정밀 궁합`, text);
     } catch (err: any) {
       showToast(`정밀 궁합 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
     } finally {
       setPairCompatLoading(false);
     }
+  };
+
+  // 8-1: 이력에서 이전에 비교한 상대를 골라 폼 입력 없이 바로 다시 비교(캐시가 있으면 API 재호출 없이 즉시 표시됨)
+  const handleReopenPairCompatHistory = (entry: PairCompatHistoryEntry) => {
+    setPartnerName(entry.partnerName);
+    setPartnerBirthYear(entry.partnerBirthYear);
+    setPartnerBirthMonth(entry.partnerBirthMonth);
+    setPartnerBirthDay(entry.partnerBirthDay);
+    setPartnerGender(entry.partnerGender);
+    setPartnerFormOpen(true);
+    void handleComparePair(entry);
   };
 
   // 오늘의 나풀이(데일리 운세) 생성 — 일주와 오늘 일진의 관계를 바탕으로 한 짧은 오늘의 한마디 + 팩폭 한줄
@@ -1043,6 +1152,7 @@ export default function App() {
       return null;
     }
     setDailyFortuneLoading(true);
+    setDailyFortuneFailed(false);
     try {
       const today = new Date();
       const todayPillar = calcDayPillar(today.getFullYear(), today.getMonth() + 1, today.getDate());
@@ -1066,6 +1176,7 @@ export default function App() {
       return data;
     } catch (err: any) {
       showToast(`오늘의 나풀이 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      setDailyFortuneFailed(true);
       return null;
     } finally {
       setDailyFortuneLoading(false);
@@ -2691,15 +2802,35 @@ export default function App() {
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
 
+            {/* 🔥 연속 방문일수(스트릭) — 2일차부터 노출(1일차는 아직 "연속"이라 할 게 없어서) */}
+            {streakCount >= 2 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--gold)', fontWeight: 700 }}>
+                <span>🔥 {streakCount}일 연속 방문 중이에요!</span>
+              </div>
+            )}
+
             {/* 매일 알림 (네이티브 앱 전용) */}
             {isNativePlatform() && (
               <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  🔔 {notificationsEnabled ? '매일 오전 9시에 알려드리고 있어요' : '매일 오전 9시에 오늘의 나풀이를 알림으로 받아보세요'}
+                  🔔 {notificationsEnabled ? `매일 ${notificationHour}시에 알려드리고 있어요` : '매일 정해진 시각에 오늘의 나풀이를 알림으로 받아보세요'}
                 </div>
-                <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleToggleNotifications} disabled={notificationsLoading}>
-                  {notificationsLoading ? '처리 중...' : notificationsEnabled ? '알림 끄기' : '알림 켜기'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <select
+                    className="form-select"
+                    style={{ padding: '4px 8px', fontSize: 12, width: 'auto' }}
+                    value={notificationHour}
+                    disabled={notificationsLoading}
+                    onChange={(e) => handleChangeNotificationHour(parseInt(e.target.value))}
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>{h}시</option>
+                    ))}
+                  </select>
+                  <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleToggleNotifications} disabled={notificationsLoading}>
+                    {notificationsLoading ? '처리 중...' : notificationsEnabled ? '알림 끄기' : '알림 켜기'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -2739,11 +2870,13 @@ export default function App() {
                 </>
               ) : (
                 <div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
-                    오늘의 일진과 내 일주의 관계로, 오늘 하루 짧은 한마디를 나풀이가 들려드려요.
+                  <p style={{ fontSize: 13, color: dailyFortuneFailed ? '#fca5a5' : 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    {dailyFortuneFailed
+                      ? '⚠️ 생성에 실패했어요. 잠시 후 다시 시도해 주세요.'
+                      : '오늘의 일진과 내 일주의 관계로, 오늘 하루 짧은 한마디를 나풀이가 들려드려요.'}
                   </p>
                   <button className="btn-primary" onClick={handleGenerateDailyFortune} disabled={dailyFortuneLoading}>
-                    {dailyFortuneLoading ? <span>✨ 살펴보는 중...</span> : <span>🌅 오늘의 나풀이 보기</span>}
+                    {dailyFortuneLoading ? <span>✨ 살펴보는 중...</span> : dailyFortuneFailed ? <span>🔄 다시 시도</span> : <span>🌅 오늘의 나풀이 보기</span>}
                   </button>
                 </div>
               )}
@@ -2784,14 +2917,28 @@ export default function App() {
               {tarotData ? (() => {
                 const seed = `${result.formData.name}_${result.formData.birthYear}${result.formData.birthMonth}${result.formData.birthDay}_${todayDateStr()}`;
                 const { card, reversed } = drawDailyTarotCard(seed);
+                const { gradient, accent } = tarotCardTheme(card);
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                      <span style={{ fontSize: 28 }}>{card.emoji}</span>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: 15 }}>{card.name} ({reversed ? '역방향' : '정방향'})</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
-                      </div>
+                    <div
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                        marginBottom: 14, padding: '22px 16px',
+                        borderRadius: 16, border: `1px solid ${accent}55`, background: gradient,
+                        boxShadow: `0 0 24px -8px ${accent}66`,
+                      }}
+                    >
+                      <span style={{ fontSize: 48, lineHeight: 1, transform: reversed ? 'rotate(180deg)' : undefined, transition: 'transform 0.3s' }}>
+                        {card.emoji}
+                      </span>
+                      <div style={{ fontWeight: 800, fontSize: 16, marginTop: 4 }}>{card.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.nameEn}</div>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+                        background: `${accent}22`, color: accent, marginTop: 4,
+                      }}>
+                        {reversed ? '🔄 역방향' : '✨ 정방향'}
+                      </span>
                     </div>
                     {card.tagline && (
                       <p style={{ fontSize: 12, color: 'var(--gold)', fontStyle: 'italic', margin: '0 0 10px' }}>
@@ -2805,11 +2952,13 @@ export default function App() {
                 );
               })() : (
                 <div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
-                    오늘의 카드를 한 장 뽑아봐요. 같은 날 다시 눌러도 같은 카드가 나와요.
+                  <p style={{ fontSize: 13, color: tarotFailed ? '#fca5a5' : 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    {tarotFailed
+                      ? '⚠️ 생성에 실패했어요. 잠시 후 다시 시도해 주세요.'
+                      : '오늘의 카드를 한 장 뽑아봐요. 같은 날 다시 눌러도 같은 카드가 나와요.'}
                   </p>
                   <button className="btn-primary" onClick={handleGenerateTarot} disabled={tarotLoading}>
-                    {tarotLoading ? <span>✨ 카드를 뽑는 중...</span> : <span>🃏 오늘의 타로 뽑기</span>}
+                    {tarotLoading ? <span>✨ 카드를 뽑는 중...</span> : tarotFailed ? <span>🔄 다시 시도</span> : <span>🃏 오늘의 타로 뽑기</span>}
                   </button>
                 </div>
               )}
@@ -2858,11 +3007,13 @@ export default function App() {
                 </>
               ) : (
                 <div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
-                    오늘 실제 하늘의 행성이 내 출생 차트와 어떤 각도를 이루는지 살펴봐요. (별자리 탭에서 어센던트·행성 배치를 먼저 확인하면 더 잘 이해돼요)
+                  <p style={{ fontSize: 13, color: transitFailed ? '#fca5a5' : 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    {transitFailed
+                      ? '⚠️ 생성에 실패했어요. 잠시 후 다시 시도해 주세요.'
+                      : '오늘 실제 하늘의 행성이 내 출생 차트와 어떤 각도를 이루는지 살펴봐요. (별자리 탭에서 어센던트·행성 배치를 먼저 확인하면 더 잘 이해돼요)'}
                   </p>
                   <button className="btn-primary" onClick={handleGenerateTransit} disabled={transitLoading}>
-                    {transitLoading ? <span>✨ 살펴보는 중...</span> : <span>🔮 오늘의 트랜짓 보기</span>}
+                    {transitLoading ? <span>✨ 살펴보는 중...</span> : transitFailed ? <span>🔄 다시 시도</span> : <span>🔮 오늘의 트랜짓 보기</span>}
                   </button>
                 </div>
               )}
@@ -3254,6 +3405,25 @@ export default function App() {
                     + 상대방 입력하고 정밀 궁합 보기
                   </button>
                 )}
+                {/* 8-1: 이전에 비교한 상대 이력 — 폼 재입력 없이 바로 다시 보기 */}
+                {!partnerFormOpen && !pairCompatText && pairCompatHistory.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>이전에 비교한 상대</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {pairCompatHistory.map((entry) => (
+                        <button
+                          key={`${entry.partnerName}_${entry.partnerBirthYear}${entry.partnerBirthMonth}${entry.partnerBirthDay}_${entry.partnerGender}`}
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 12 }}
+                          onClick={() => handleReopenPairCompatHistory(entry)}
+                          disabled={pairCompatLoading}
+                        >
+                          {entry.partnerGender === 'male' ? '🌊' : '🌸'} {entry.partnerName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {partnerFormOpen && !pairCompatText && (
                   <div className="space-y-4">
                     <input
@@ -3289,7 +3459,7 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-                    <button className="btn-primary" onClick={handleComparePair} disabled={pairCompatLoading}>
+                    <button className="btn-primary" onClick={() => handleComparePair()} disabled={pairCompatLoading}>
                       {pairCompatLoading ? <span>✨ 비교하는 중...</span> : <span>💑 정밀 궁합 보기</span>}
                     </button>
                   </div>

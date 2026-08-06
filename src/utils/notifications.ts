@@ -12,6 +12,8 @@ import { Capacitor } from '@capacitor/core';
 
 const NOTIFICATION_ID = 1;
 const STORAGE_KEY = 'napuli_daily_notification_enabled';
+const HOUR_STORAGE_KEY = 'napuli_daily_notification_hour';
+const DEFAULT_HOUR = 9;
 
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
@@ -21,8 +23,14 @@ export function isDailyNotificationEnabled(): boolean {
   return localStorage.getItem(STORAGE_KEY) === 'true';
 }
 
-/** 권한을 요청하고, 허용되면 매일 오전 9시 반복 알림을 예약한다. 실패/거부 시 false. */
-export async function enableDailyNotification(): Promise<boolean> {
+/** 사용자가 선택한 알림 시(0~23). 저장된 값이 없거나 범위를 벗어나면 기본값(오전 9시). */
+export function getNotificationHour(): number {
+  const raw = Number(localStorage.getItem(HOUR_STORAGE_KEY));
+  return Number.isInteger(raw) && raw >= 0 && raw <= 23 ? raw : DEFAULT_HOUR;
+}
+
+/** 권한을 요청하고, 허용되면 지정한 시(hour)에 매일 반복 알림을 예약한다. 실패/거부 시 false. */
+export async function enableDailyNotification(hour: number = getNotificationHour()): Promise<boolean> {
   if (!isNativePlatform()) return false;
 
   const { LocalNotifications } = await import('@capacitor/local-notifications');
@@ -35,12 +43,13 @@ export async function enableDailyNotification(): Promise<boolean> {
         id: NOTIFICATION_ID,
         title: '🔮 오늘의 나풀이',
         body: '오늘의 운세·타로·트랜짓이 도착했어요. 지금 확인해보세요!',
-        schedule: { on: { hour: 9, minute: 0 }, repeats: true, allowWhileIdle: true },
+        schedule: { on: { hour, minute: 0 }, repeats: true, allowWhileIdle: true },
       },
     ],
   });
 
   localStorage.setItem(STORAGE_KEY, 'true');
+  localStorage.setItem(HOUR_STORAGE_KEY, String(hour));
   return true;
 }
 
