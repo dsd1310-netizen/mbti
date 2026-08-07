@@ -2,7 +2,9 @@
    🌌 사주 × MBTI 앱 — 우주/별자리 감성 디자인
    ────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;700;900&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+/* [2026-08-07] 구글 폰트는 index.html의 <link>(+preconnect)로 옮김 — CSS @import는
+   렌더링을 막으며 순차 로드되어(브라우저가 이 CSS 번들을 다 받고 파싱한 뒤에야 폰트 요청
+   시작) index.html의 <link> 방식보다 폰트 로딩이 늦게 시작됨. 계획안.md 참고. */
 
 :root {
   --bg-deep: #050510;
