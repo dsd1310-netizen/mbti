@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { trackException } from './utils/analytics';
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
     console.error('[ErrorBoundary] 렌더링 중 오류 발생:', error, info.componentStack);
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    trackException(message, true);
   }
 
   render() {

@@ -29,348 +29,33 @@ import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
-import { drawDailyTarotCard, TarotCard } from './data/tarotCards';
+import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
-import { recordTodayVisitAndGetStreak } from './utils/streak';
+import { recordTodayVisitAndGetStreak, getHighestTier } from './utils/streak';
 import { trackResultViewAndMaybeRequestReview } from './utils/appReview';
+import { DEPLOY_DOMAIN, DEPLOY_ORIGIN } from './deployConfig';
+import { trackEvent } from './utils/analytics';
 import type { User } from 'firebase/auth';
+import { NapuliMark } from './components/NapuliMark';
+import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY } from './appTypes';
+import {
+  loadCloudSync,
+  MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
+  escapeHtml, escapeHtmlBreaks, wrapCanvasText,
+  fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
+  elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
+  unseDeepCacheKey, elementSummaryDeepCacheKey, compatSummaryDeepCacheKey, isStaleDeepFallbackText,
+  pillarCacheKey, astrologyCacheKey, astrologyDeepCacheKey, todayDateStr, tarotCardTheme,
+  dailyFortuneCacheKey, transitCacheKey, tarotCacheKey, pairCompatCacheKey,
+  PairCompatHistoryEntry, getPairCompatHistory, addPairCompatHistoryEntry,
+  chatCacheKey, CHAT_DISPLAY_LIMIT, CHAT_CONTEXT_TURNS, archetypeCacheKey,
+  setCachedItem, GEMINI_API_KEY,
+  CompatInvite, encodeCompatInvite, decodeCompatInvite,
+} from './appHelpers';
 
-// 클라우드 동기화(Firebase)는 실제로 필요할 때(로그인 여부 확인/로그인 시도)만 동적으로 불러온다.
-// Firebase SDK가 번들 크기를 크게 키우기 때문에(약 260KB→1MB), 로그인 기능을 쓰지 않는
-// 대다수 사용자의 초기 로딩 속도에 영향이 가지 않도록 하기 위함.
-let cloudSyncModulePromise: Promise<typeof import('./utils/cloudSync')> | null = null;
-function loadCloudSync() {
-  if (!cloudSyncModulePromise) cloudSyncModulePromise = import('./utils/cloudSync');
-  return cloudSyncModulePromise;
-}
-
-// ─── 나풀이 심볼 (크리스탈볼 속 별) — 헤더 로고에 사용 ────────────────────
-function NapuliMark({ size = 26 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
-      <defs>
-        <radialGradient id="napuliBallGrad" cx="36%" cy="30%" r="75%">
-          <stop offset="0%" stopColor="#c9adff" />
-          <stop offset="55%" stopColor="#8b5cf6" />
-          <stop offset="100%" stopColor="#4c2889" />
-        </radialGradient>
-        <linearGradient id="napuliStarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#ffe577" />
-          <stop offset="100%" stopColor="#f5c842" />
-        </linearGradient>
-      </defs>
-      <circle cx="50" cy="46" r="32" fill="url(#napuliBallGrad)" />
-      <ellipse cx="38" cy="31" rx="8" ry="5" fill="#ffffff" opacity="0.32" transform="rotate(-18 38 31)" />
-      <path d="M50 26 L54.5 41.5 L70 46 L54.5 50.5 L50 66 L45.5 50.5 L30 46 L45.5 41.5 Z" fill="url(#napuliStarGrad)" />
-      <circle cx="50" cy="46" r="4.2" fill="#fffbe8" />
-    </svg>
-  );
-}
-
-// ─── 타입 ────────────────────────────────────────
-interface FormData {
-  name: string;
-  birthYear: string;
-  birthMonth: string;
-  birthDay: string;
-  birthBranch: string;
-  hourUnknown: boolean;
-  useExactTime: boolean;
-  exactHour: string;
-  exactMinute: string;
-  birthCity: string;
-  gender: string;
-  mbti: string;
-}
-interface AppResult {
-  formData: FormData;
-  sajuResult: SajuResult;
-  hourBranch: typeof HOUR_BRANCHES[0];
-  aiIntro: SajuIntro | null;
-  astrologyResult: AstrologyResult;
-  astrologyTimeConfidence: 'exact' | 'approximate' | 'unknown';
-}
-interface Bookmark {
-  id: number;
-  category: string;
-  title: string;
-  content: string;
-  date: string;
-  snapshot?: FormData; // 저장 당시의 입력값 — 전체 결과 화면으로 되돌아갈 때 사용
-}
-type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
-
-const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
-type PillarKey = 'year' | 'month' | 'day' | 'hour';
-
-// PDF 저장 시 섹션 선택 — 12개 개별 항목 대신 8개 큰 단위로 묶음(계획안.md 논의 결과)
-type PdfSectionKey = 'aiCategories' | 'prescriptions' | 'elementSummary' | 'compat' | 'fengshui' | 'fortune' | 'pillars' | 'astrology';
-const PDF_SECTION_META: Record<PdfSectionKey, { label: string; desc: string }> = {
-  aiCategories: { label: '🔮 AI 해석', desc: '성격 · 커리어 · 연애 · 재물 · 닮은 인물' },
-  prescriptions: { label: '🎯 3대 실천 처방전', desc: '' },
-  elementSummary: { label: '🌿 오행 종합 해설', desc: '' },
-  compat: { label: '💑 궁합 조합표', desc: '' },
-  fengshui: { label: '🏡 풍수 수리 가이드', desc: '' },
-  fortune: { label: '🌌 대운 · 세운 & 운세 해설', desc: '' },
-  pillars: { label: '🧭 사주 4기둥 심층 해설', desc: '' },
-  astrology: { label: '🪐 서양 고전점성술 (별자리)', desc: '' },
-};
-
-const MBTI_LIST = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
-
-const ELEMENT_LABELS: Record<string, { ko: string; emoji: string; cls: string }> = {
-  wood:  { ko: '목(木)', emoji: '🌳', cls: 'element-wood' },
-  fire:  { ko: '화(火)', emoji: '🔥', cls: 'element-fire' },
-  earth: { ko: '토(土)', emoji: '⛰️', cls: 'element-earth' },
-  metal: { ko: '금(金)', emoji: '💎', cls: 'element-metal' },
-  water: { ko: '수(水)', emoji: '🌊', cls: 'element-water' },
-};
-
-const LOADING_MESSAGES = [
-  '만세력 데이터베이스 접속 중...',
-  '절기(節氣) 기준 월주 정밀 연산 중...',
-  '60갑자 일진 대조 완료, 시주 산출 중...',
-  '나풀이가 사주 × MBTI 첫인상을 살피는 중...',
-  '오행 밸런스 분석 중...',
-  '당신만의 명리 리포트를 완성하는 중...',
-];
-
-// AI 해석 4개 카테고리 탭에 쓰이는 고정 카피
-const CATEGORY_TAB_META: Record<AiCategoryKey, {
-  paneTitle: string; factBombTitle: string; bookmarkCategory: string; bookmarkTitle: string; generateLabel: string; introText: string;
-}> = {
-  personality: {
-    paneTitle: '🌟 사주 오행 × MBTI 융합 성격 원리',
-    factBombTitle: '🔥 사주 × MBTI 뼈 때리는 팩폭 한줄평',
-    bookmarkCategory: '성격 분석',
-    bookmarkTitle: 'MBTI 성격 분석',
-    generateLabel: '🌟 성격 진단 생성하기',
-    introText: '타고난 성격과 본질이 궁금하다면 나풀이 팩폭 분석을 받아보세요.',
-  },
-  career: {
-    paneTitle: '💼 직업적 적성 & 업무 스타일 원리',
-    factBombTitle: '🔥 뼈 때리는 일적 팩폭 한줄평',
-    bookmarkCategory: '커리어 분석',
-    bookmarkTitle: '커리어 & 직무 적성',
-    generateLabel: '💼 커리어 분석 생성하기',
-    introText: '직업적 적성과 업무 스타일이 궁금하다면 나풀이 팩폭 분석을 받아보세요.',
-  },
-  romance: {
-    paneTitle: '💖 사랑, 연애 & 인간관계 패턴',
-    factBombTitle: '🔥 뼈 때리는 연애 팩폭 한줄평',
-    bookmarkCategory: '연애 분석',
-    bookmarkTitle: '사랑 & 관계 패턴',
-    generateLabel: '💖 연애 분석 생성하기',
-    introText: '연애 스타일과 인간관계 패턴이 궁금하다면 나풀이 팩폭 분석을 받아보세요.',
-  },
-  wealth: {
-    paneTitle: '💰 재물 축적 & 돈 새는 지출 구멍',
-    factBombTitle: '🔥 뼈 때리는 재물 팩폭 한줄평',
-    bookmarkCategory: '재물 분석',
-    bookmarkTitle: '재물 & 소비 성향',
-    generateLabel: '💰 재물 분석 생성하기',
-    introText: '재물운과 소비 습관이 궁금하다면 나풀이 팩폭 분석을 받아보세요.',
-  },
-};
-
-function isQuestionableCategory(cat: AiCategoryKey): cat is QuestionableCategory {
-  return cat === 'career' || cat === 'romance' || cat === 'wealth';
-}
-
-// HTML 문자열 삽입 지점(PDF document.write 등)에 쓰이는 이스케이프 헬퍼.
-// 이름 등 사용자 입력값, AI 생성 텍스트, (다이어리 불러오기로 주입 가능한) 캐시된 문자열은
-// 전부 신뢰할 수 없는 입력으로 간주해 반드시 이 함수를 거쳐야 함.
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-// 이스케이프 후 줄바꿈을 <br>로 변환 (AI 텍스트를 <p> 안에 그대로 넣을 때 사용)
-function escapeHtmlBreaks(str: string): string {
-  return escapeHtml(str).replace(/\n/g, '<br>');
-}
-
-// 캔버스에 텍스트를 최대 너비 기준으로 줄바꿈 (공백 단위 우선, 안 되면 글자 단위)
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-  return lines;
-}
-
-// birthBranch/hourUnknown을 반드시 포함해야 함 — 시간에 따라 elementCounts/sipsin(십신)이 달라져,
-// 이름+생년월일만으로 키를 구성하면 시간만 바꿔 재제출했을 때 이전 시간 기준 캐시가 잘못 재사용됨.
-type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string; birthBranch: string; hourUnknown: boolean };
-
-function baseKeyId(f: CacheKeyBase): string {
-  return `${f.name}_${f.birthYear}${f.birthMonth}${f.birthDay}_${f.hourUnknown ? 'unknown' : f.birthBranch}`;
-}
-
-function fengShuiCacheKey(f: CacheKeyBase): string {
-  return `saju_fengshui_${baseKeyId(f)}`;
-}
-function unseCacheKey(f: CacheKeyBase, year: number): string {
-  return `saju_unse_${baseKeyId(f)}_${year}`;
-}
-function categoryCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
-  const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
-  return `saju_category_${category}_${baseKeyId(f)}_${mbti}${answerSuffix}`;
-}
-function prescriptionsCacheKey(f: CacheKeyBase, mbti: string): string {
-  return `saju_prescriptions_${baseKeyId(f)}_${mbti}`;
-}
-function aiIntroCacheKey(f: CacheKeyBase, mbti: string): string {
-  return `saju_aiintro_${baseKeyId(f)}_${mbti}`;
-}
-function elementSummaryCacheKey(f: CacheKeyBase): string {
-  return `saju_elementsummary_${baseKeyId(f)}`;
-}
-function compatSummaryCacheKey(f: CacheKeyBase): string {
-  return `saju_compatsummary_${baseKeyId(f)}`;
-}
-function categoryDeepCacheKey(f: CacheKeyBase, mbti: string, category: AiCategoryKey, answers?: CategoryUserAnswer[]): string {
-  const answerSuffix = answers && answers.length > 0 ? `_${answers.map(a => a.answer).join('|')}` : '';
-  return `saju_category_${category}_${baseKeyId(f)}_${mbti}${answerSuffix}_deep`;
-}
-function fengShuiDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_fengshui_${baseKeyId(f)}_deep`;
-}
-function unseDeepCacheKey(f: CacheKeyBase, year: number): string {
-  return `saju_unse_${baseKeyId(f)}_${year}_deep`;
-}
-function elementSummaryDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_elementsummary_${baseKeyId(f)}_deep`;
-}
-function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
-  return `saju_compatsummary_${baseKeyId(f)}_deep`;
-}
-
-// [2026-08-06] 심화해석 계열은 실패 시 폴백 문구("...지금은 불러올 수 없습니다...")가
-// 실제 콘텐츠인 것처럼 캐시되던 버그가 있었음(geminiApi.ts throwOnFailure로 향후 재발은 막음).
-// 다만 그 수정 이전에 이미 localStorage에 저장된 사용자의 기존 캐시는 여전히 이 문구를 담고
-// 있을 수 있어, 캐시를 읽을 때 이 패턴이면 "생성 안 됨"으로 취급해 버튼이 다시 뜨게 함.
-function isStaleDeepFallbackText(text: string | null): boolean {
-  return !!text && text.endsWith('지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.');
-}
-function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
-  return `saju_pillar_${key}_${baseKeyId(f)}`;
-}
-// 서양점성술은 출생 도시(좌표)에 따라 하우스·어센던트가 달라지므로 baseKeyId에 도시명을 추가로 반영.
-// baseKeyId의 birthBranch는 2시간 단위 시진까지만 구분하지만, 정확한 시:분 입력 시
-// 어센던트는 분 단위로 계속 이동하므로 exactTime을 추가로 반영해 캐시가 섞이지 않게 함.
-function astrologyCacheKey(f: FormData, city: string): string {
-  const exactTime = f.useExactTime && !f.hourUnknown ? `_${f.exactHour}:${f.exactMinute}` : '';
-  return `saju_astrology_${baseKeyId(f)}_${city}${exactTime}`;
-}
-function astrologyDeepCacheKey(f: FormData, city: string): string {
-  return `${astrologyCacheKey(f, city)}_deep`;
-}
-function todayDateStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// "오늘의 타로" 카드 비주얼(8-2) — 실제 카드 이미지 자산 없이, 수트(4원소)별 그라디언트·강조색으로
-// 카드다운 느낌을 냄. 메이저 아르카나는 이 앱 전체 테마와 맞춘 보라/골드 톤.
-// "오늘의 타로" 카드 비주얼(8-2/8-3) — 수트(4원소)별 강조색·짙은색·글로우 세트.
-// .persona-card 공통 프레임(App.css)에 CSS 커스텀 프로퍼티로 꽂아 넣어 메달리온 스타일을 만듦.
-function tarotCardTheme(card: TarotCard): { accent: string; accentDark: string; glow: string } {
-  if (card.arcana === 'major') {
-    return { accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.5)' };
-  }
-  switch (card.suit) {
-    case 'wands': return { accent: '#fb923c', accentDark: '#9a3412', glow: 'rgba(251, 146, 60, 0.5)' };
-    case 'cups': return { accent: '#60a5fa', accentDark: '#1e40af', glow: 'rgba(96, 165, 250, 0.5)' };
-    case 'swords': return { accent: '#cbd5e1', accentDark: '#475569', glow: 'rgba(203, 213, 225, 0.4)' };
-    case 'pentacles': return { accent: '#4ade80', accentDark: '#166534', glow: 'rgba(74, 222, 128, 0.5)' };
-    default: return { accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.5)' };
-  }
-}
-function dailyFortuneCacheKey(f: CacheKeyBase, dateStr: string): string {
-  return `saju_daily_${baseKeyId(f)}_${dateStr}`;
-}
-function transitCacheKey(f: FormData, city: string, dateStr: string): string {
-  return `saju_transit_${astrologyCacheKey(f, city)}_${dateStr}`;
-}
-function tarotCacheKey(f: CacheKeyBase, dateStr: string): string {
-  return `saju_tarot_${baseKeyId(f)}_${dateStr}`;
-}
-function pairCompatCacheKey(f: CacheKeyBase, partnerName: string, partnerBirthYear: string, partnerBirthMonth: string, partnerBirthDay: string, partnerGender: string): string {
-  return `saju_paircompat_${baseKeyId(f)}_${partnerName}_${partnerBirthYear}${partnerBirthMonth}${partnerBirthDay}_${partnerGender}`;
-}
-
-// 8-1: "이전에 비교한 상대" 이력 — 본인(f) 기준으로 지금까지 비교해본 상대 목록을 별도로 기록해둬서,
-// 매번 새로 폼을 입력하지 않고도 예전 결과를 바로 다시 볼 수 있게 함(캐시 자체는 이미 상대별로
-// 분리돼 있었지만, "무슨 상대를 봤었는지" 목록을 보여줄 데가 없었음).
-interface PairCompatHistoryEntry {
-  partnerName: string;
-  partnerBirthYear: string;
-  partnerBirthMonth: string;
-  partnerBirthDay: string;
-  partnerGender: string;
-  comparedAt: number;
-}
-function pairCompatHistoryKey(f: CacheKeyBase): string {
-  return `saju_paircompat_history_${baseKeyId(f)}`;
-}
-function getPairCompatHistory(f: CacheKeyBase): PairCompatHistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(pairCompatHistoryKey(f));
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-function addPairCompatHistoryEntry(f: CacheKeyBase, entry: Omit<PairCompatHistoryEntry, 'comparedAt'>): void {
-  const existing = getPairCompatHistory(f).filter(e =>
-    !(e.partnerName === entry.partnerName && e.partnerBirthYear === entry.partnerBirthYear
-      && e.partnerBirthMonth === entry.partnerBirthMonth && e.partnerBirthDay === entry.partnerBirthDay
-      && e.partnerGender === entry.partnerGender)
-  );
-  const next = [{ ...entry, comparedAt: Date.now() }, ...existing].slice(0, 10); // 최근 10명까지만 보관
-  localStorage.setItem(pairCompatHistoryKey(f), JSON.stringify(next));
-}
-
-// AI 후속질문(채팅) — 카테고리와 무관하게 "AI 해석" 탭 전체에서 하나의 대화를 공유.
-// 화면에는 최근 CHAT_DISPLAY_LIMIT개까지만 보관하고, 실제 API 호출 시에는 그중에서도
-// 최근 CHAT_CONTEXT_TURNS턴만 다시 프롬프트에 실어 보내 토큰 소모가 무한정 늘지 않게 함.
-function chatCacheKey(f: CacheKeyBase): string {
-  return `saju_chat_${baseKeyId(f)}`;
-}
-const CHAT_DISPLAY_LIMIT = 20; // 메시지 개수(10턴) — 화면·로컬 저장 상한
-const CHAT_CONTEXT_TURNS = 4;  // AI에 다시 실어 보내는 최근 턴 수
-
-// 나와 닮은 인물 AI 매칭카드 — 한번 생성되면 다른 카테고리와 동일하게 캐시.
-function archetypeCacheKey(f: CacheKeyBase, mbti: string): string {
-  return `saju_archetype_${baseKeyId(f)}_${mbti}`;
-}
-
-// Gemini API 키는 클라이언트에 절대 노출하지 않고 서버리스 프록시(api/gemini.ts)에서만 보관합니다.
-// 아래 값은 실제 키가 아니라, 기존 코드 전반의 `if (!GEMINI_API_KEY)` 활성화 여부 검사를
-// 그대로 유지하기 위한 하위 호환용 상수이며 geminiApi.ts의 저수준 함수에서는 사용하지 않습니다.
-// ⚠️ 이 값은 항상 truthy인 리터럴 상수라서 파일 전체의 `if (!GEMINI_API_KEY)` / `{!GEMINI_API_KEY && ...}`
-// 분기(예: 아래 "AI 비활성화" 안내 UI)는 전부 도달 불가능한 죽은 코드입니다 — 서버 쪽 실제 키
-// 누락 여부(GEMINI_API_KEY 환경변수)는 이 상수와 무관하며, api/gemini.ts가 매 호출마다
-// 개별적으로 확인합니다(CONFIG_MISSING 에러로 응답). "키 없음"을 감지하는 살아있는 체크로
-// 오인해 여기에 실제 감지 로직을 추가하려 하지 마세요.
-const GEMINI_API_KEY = 'server-managed';
+// ─── 타입은 ./appTypes.ts, 순수 헬퍼/캐시 키 함수는 ./appHelpers.ts로 이동 (2026-08-07) ───
 
 // ─── 앱 컴포넌트 ──────────────────────────────────
 export default function App() {
@@ -378,6 +63,11 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
   const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
   const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions' | 'archetype'>('personality');
+  // 어떤 탭/섹션을 실제로 많이 보는지 알기 위한 최소 화면 추적(analytics.ts 설정 안 돼 있으면 무동작)
+  useEffect(() => {
+    if (step !== 'result') return;
+    trackEvent('screen_view', { screen_name: activeSection === 'saju' ? `saju_${activeSajuTab}` : activeSection });
+  }, [step, activeSection, activeSajuTab]);
   // 🔔 매일 알림(네이티브 앱 전용) — 웹 버전에서는 UI 자체를 노출하지 않음
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => isDailyNotificationEnabled());
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -483,9 +173,15 @@ export default function App() {
   const [pairCompatText, setPairCompatText] = useState<string | null>(null);
   const [pairCompatLoading, setPairCompatLoading] = useState(false);
   const [pairCompatHistory, setPairCompatHistory] = useState<PairCompatHistoryEntry[]>([]);
+  // 💑 궁합 초대 링크로 들어온 경우 — 링크를 보낸 사람의 정보(URL ?invite= 파라미터에서 디코딩).
+  // 내 정보를 입력해 결과 화면에 도달하면 자동으로 이 사람과의 정밀 궁합을 보여준다(7-AI 참고).
+  const [compatInvite, setCompatInvite] = useState<CompatInvite | null>(null);
+  const [inviteLinkCopying, setInviteLinkCopying] = useState(false);
 
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [imageCardGenerating, setImageCardGenerating] = useState(false);
+  // 오늘의 타로/닮은 인물 개별 결과 이미지 카드 — 어떤 카드가 생성 중인지만 구분(동시 클릭 방지용)
+  const [personaImageGenerating, setPersonaImageGenerating] = useState<'tarot' | 'archetype' | 'streak' | null>(null);
 
   // PDF 저장 시 섹션 선택 모달 — 기본값은 전부 체크(기존 "전체 포함" 동작과 동일)
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
@@ -503,7 +199,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setStreakCount(recordTodayVisitAndGetStreak(todayDateStr()));
+    const { count, newTier } = recordTodayVisitAndGetStreak(todayDateStr());
+    setStreakCount(count);
+    if (newTier) {
+      showToast(`${newTier.emoji} ${newTier.days}일 연속 방문 달성! "${newTier.label}" 배지를 획득했어요`);
+      trackEvent('streak_milestone', { days: newTier.days, tier: newTier.label });
+    }
+  }, []);
+
+  // 💑 궁합 초대 링크(?invite=...)로 들어왔는지 확인. 있으면 상태에 저장하고 URL에서는 바로
+  // 제거(주소창/방문 기록에 남지 않게, main.tsx의 devkey 처리와 동일한 패턴).
+  useEffect(() => {
+    const inviteParam = new URLSearchParams(window.location.search).get('invite');
+    if (!inviteParam) return;
+    const decoded = decodeCompatInvite(inviteParam);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('invite');
+    window.history.replaceState({}, '', url.toString());
+    if (decoded) {
+      setCompatInvite(decoded);
+      trackEvent('invite_link_opened');
+    }
   }, []);
 
   // 클라우드 동기화(선택 기능): 로그인 상태 구독 + 로그인 시 로컬↔클라우드 다이어리 기록 병합
@@ -577,6 +293,18 @@ export default function App() {
       const mod = await loadCloudSync();
       await mod.signInWithGoogle();
       showToast('로그인되었습니다 ☁️');
+      trackEvent('sign_in', { method: 'google' });
+    } catch (err: any) {
+      showToast(`로그인 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    }
+  };
+
+  const handleSignInApple = async () => {
+    try {
+      const mod = await loadCloudSync();
+      await mod.signInWithApple();
+      showToast('로그인되었습니다 ☁️');
+      trackEvent('sign_in', { method: 'apple' });
     } catch (err: any) {
       showToast(`로그인 실패: ${err?.message ?? '알 수 없는 오류'}`);
     }
@@ -731,7 +459,8 @@ export default function App() {
         answers,
       );
       setCategoryData(prev => ({ ...prev, [category]: data }));
-      localStorage.setItem(categoryCacheKey(result.formData, result.formData.mbti, category, answers), JSON.stringify(data));
+      setCachedItem(categoryCacheKey(result.formData, result.formData.mbti, category, answers), JSON.stringify(data));
+      trackEvent('content_generate', { feature: 'category', category });
       return data;
     } catch (err: any) {
       showToast(`${CATEGORY_TAB_META[category].bookmarkCategory} 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -760,7 +489,8 @@ export default function App() {
         answers,
       );
       setCategoryDeepData(prev => ({ ...prev, [category]: text }));
-      localStorage.setItem(categoryDeepCacheKey(result.formData, result.formData.mbti, category, answers), text);
+      setCachedItem(categoryDeepCacheKey(result.formData, result.formData.mbti, category, answers), text);
+      trackEvent('content_generate', { feature: 'category_deep', category });
       return text;
     } catch (err: any) {
       showToast(`${CATEGORY_TAB_META[category].bookmarkCategory} 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -798,7 +528,8 @@ export default function App() {
         result.sajuResult,
       );
       setPrescriptionsData(data);
-      localStorage.setItem(prescriptionsCacheKey(result.formData, result.formData.mbti), JSON.stringify(data));
+      setCachedItem(prescriptionsCacheKey(result.formData, result.formData.mbti), JSON.stringify(data));
+      trackEvent('content_generate', { feature: 'prescriptions' });
       return data;
     } catch (err: any) {
       showToast(`처방전 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -825,7 +556,8 @@ export default function App() {
         result.sajuResult,
       );
       setArchetypeData(data);
-      localStorage.setItem(archetypeCacheKey(result.formData, result.formData.mbti), JSON.stringify(data));
+      setCachedItem(archetypeCacheKey(result.formData, result.formData.mbti), JSON.stringify(data));
+      trackEvent('content_generate', { feature: 'archetype' });
       return data;
     } catch (err: any) {
       showToast(`닮은 인물 매칭 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -862,7 +594,8 @@ export default function App() {
       );
       const updated = [...withUserMsg, { role: 'assistant', text: answer } as ChatMessage].slice(-CHAT_DISPLAY_LIMIT);
       setChatMessages(updated);
-      localStorage.setItem(chatCacheKey(result.formData), JSON.stringify(updated));
+      setCachedItem(chatCacheKey(result.formData), JSON.stringify(updated));
+      trackEvent('content_generate', { feature: 'chat_message' });
     } catch (err: any) {
       showToast(`답변 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
       // 사용자 질문 자체는 화면에 남겨둬 무엇을 물어봤는지 보이게 하고, 다시 입력해 재시도하게 함
@@ -895,7 +628,8 @@ export default function App() {
         result.sajuResult.elementCounts,
       );
       setFengShuiText(text);
-      localStorage.setItem(fengShuiCacheKey(result.formData), text);
+      setCachedItem(fengShuiCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'fengshui' });
       return text;
     } catch (err: any) {
       showToast(`풍수 가이드 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -923,7 +657,8 @@ export default function App() {
         result.sajuResult,
       );
       setFengShuiDeepText(text);
-      localStorage.setItem(fengShuiDeepCacheKey(result.formData), text);
+      setCachedItem(fengShuiDeepCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'fengshui_deep' });
       return text;
     } catch (err: any) {
       showToast(`풍수 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -961,7 +696,8 @@ export default function App() {
         seunEntries,
       );
       setUnseText(text);
-      localStorage.setItem(unseCacheKey(result.formData, nowYear), text);
+      setCachedItem(unseCacheKey(result.formData, nowYear), text);
+      trackEvent('content_generate', { feature: 'fortune' });
       return text;
     } catch (err: any) {
       showToast(`운세 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1000,7 +736,8 @@ export default function App() {
         result.sajuResult,
       );
       setUnseDeepText(text);
-      localStorage.setItem(unseDeepCacheKey(result.formData, nowYear), text);
+      setCachedItem(unseDeepCacheKey(result.formData, nowYear), text);
+      trackEvent('content_generate', { feature: 'fortune_deep' });
       return text;
     } catch (err: any) {
       showToast(`운세 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1021,7 +758,8 @@ export default function App() {
     try {
       const text = await generateElementSummaryInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult.elementCounts);
       setElementSummaryText(text);
-      localStorage.setItem(elementSummaryCacheKey(result.formData), text);
+      setCachedItem(elementSummaryCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'element_summary' });
       return text;
     } catch (err: any) {
       showToast(`오행 종합 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1042,7 +780,8 @@ export default function App() {
     try {
       const text = await generateElementSummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult);
       setElementSummaryDeepText(text);
-      localStorage.setItem(elementSummaryDeepCacheKey(result.formData), text);
+      setCachedItem(elementSummaryDeepCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'element_summary_deep' });
       return text;
     } catch (err: any) {
       showToast(`오행 종합 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1072,7 +811,8 @@ export default function App() {
         hae: dayBranchRelations.haePartner ? `${dayBranchRelations.haePartner.animal}띠` : null,
       });
       setCompatSummaryText(text);
-      localStorage.setItem(compatSummaryCacheKey(result.formData), text);
+      setCachedItem(compatSummaryCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'compat_summary' });
       return text;
     } catch (err: any) {
       showToast(`궁합 종합 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1102,7 +842,8 @@ export default function App() {
         hae: dayBranchRelations.haePartner ? `${dayBranchRelations.haePartner.animal}띠` : null,
       }, result.sajuResult);
       setCompatSummaryDeepText(text);
-      localStorage.setItem(compatSummaryDeepCacheKey(result.formData), text);
+      setCachedItem(compatSummaryDeepCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'compat_summary_deep' });
       return text;
     } catch (err: any) {
       showToast(`궁합 종합 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1123,7 +864,8 @@ export default function App() {
     try {
       const data = await generateAstrologyInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult);
       setAstrologyData(data);
-      localStorage.setItem(astrologyCacheKey(result.formData, result.formData.birthCity), JSON.stringify(data));
+      setCachedItem(astrologyCacheKey(result.formData, result.formData.birthCity), JSON.stringify(data));
+      trackEvent('content_generate', { feature: 'astrology' });
       return data;
     } catch (err: any) {
       showToast(`별자리 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1144,7 +886,8 @@ export default function App() {
     try {
       const text = await generateAstrologyDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult);
       setAstrologyDeepText(text);
-      localStorage.setItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity), text);
+      setCachedItem(astrologyDeepCacheKey(result.formData, result.formData.birthCity), text);
+      trackEvent('content_generate', { feature: 'astrology_deep' });
       return text;
     } catch (err: any) {
       showToast(`별자리 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1168,7 +911,8 @@ export default function App() {
       const data = await generateTransitInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult, transits);
       setTransitData(data);
       const dateStr = todayDateStr();
-      localStorage.setItem(transitCacheKey(result.formData, result.formData.birthCity, dateStr), JSON.stringify(data));
+      setCachedItem(transitCacheKey(result.formData, result.formData.birthCity, dateStr), JSON.stringify(data));
+      trackEvent('content_generate', { feature: 'transit' });
       return data;
     } catch (err: any) {
       showToast(`오늘의 트랜짓 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1194,8 +938,9 @@ export default function App() {
       const { card, reversed } = drawDailyTarotCard(seed);
       const text = await generateTarotInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.formData.mbti, card, reversed);
       setTarotData(text);
-      localStorage.setItem(tarotCacheKey(result.formData, dateStr), text);
+      setCachedItem(tarotCacheKey(result.formData, dateStr), text);
       addBookmark('오늘의 타로', `${dateStr} 오늘의 타로 · ${card.name}(${reversed ? '역방향' : '정방향'})`, text);
+      trackEvent('content_generate', { feature: 'tarot' });
       return text;
     } catch (err: any) {
       showToast(`오늘의 타로 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1264,8 +1009,9 @@ export default function App() {
         compare,
       );
       setPairCompatText(text);
-      localStorage.setItem(cacheKey, JSON.stringify({ text, sajuB, compare }));
+      setCachedItem(cacheKey, JSON.stringify({ text, sajuB, compare }));
       addBookmark('정밀 궁합', `${result.formData.name}님 × ${pName}님 정밀 궁합`, text);
+      trackEvent('content_generate', { feature: 'pair_compat' });
     } catch (err: any) {
       showToast(`정밀 궁합 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
     } finally {
@@ -1283,6 +1029,71 @@ export default function App() {
     setPartnerFormOpen(true);
     void handleComparePair(entry);
   };
+
+  // 💑 궁합 초대 링크 생성 + 공유 — 내 생년월일을 URL에 담아 보내면, 링크를 연 상대방은
+  // 자기 정보만 입력하고 바로 나와의 정밀 궁합을 보게 됨(7-AI 참고).
+  const handleShareCompatInvite = async () => {
+    if (!result) return;
+    const invite: CompatInvite = {
+      name: result.formData.name,
+      birthYear: result.formData.birthYear,
+      birthMonth: result.formData.birthMonth,
+      birthDay: result.formData.birthDay,
+      gender: result.formData.gender,
+    };
+    const base = window.location.href.includes('localhost') ? DEPLOY_ORIGIN : window.location.origin;
+    // base64 인코딩 결과에 +/=/ 같은 문자가 섞일 수 있어(실측 확인됨), 쿼리 파라미터 값으로
+    // 그대로 이어붙이면 안 되고 반드시 encodeURIComponent로 한 번 더 감싸야 함 —
+    // 특히 "+"는 쿼리스트링에서 공백으로 잘못 해석되어 링크가 깨짐.
+    const inviteUrl = `${base}/?invite=${encodeURIComponent(encodeCompatInvite(invite))}`;
+    const shareText = `${result.formData.name}님이 나풀이에서 궁합을 보자고 초대했어요! 내 정보만 입력하면 바로 결과를 볼 수 있어요 🔮`;
+
+    const nav = navigator as any;
+    if (nav.share) {
+      try {
+        await nav.share({ title: '나풀이 궁합 초대', text: shareText, url: inviteUrl });
+        trackEvent('invite_link_created', { method: 'native_share' });
+        return;
+      } catch {
+        // 공유 취소/실패 시 클립보드 복사로 대체
+      }
+    }
+    setInviteLinkCopying(true);
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      showToast('궁합 초대 링크가 복사되었어요! 친구에게 보내보세요 🔗');
+      trackEvent('invite_link_created', { method: 'clipboard' });
+    } catch {
+      showToast('링크 복사에 실패했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setInviteLinkCopying(false);
+    }
+  };
+
+  // 💑 궁합 초대 링크로 들어온 상태에서 내 결과가 준비되면, 상대방(초대한 사람) 정보를 자동으로
+  // 채우고 정밀 궁합을 바로 보여준다. result가 setResult() 직후의 같은 틱에서는 아직 최신값이
+  // 아니므로(React state 비동기 특성 — 6-A-2와 동일한 이유) result 변화를 구독하는 effect로 처리.
+  useEffect(() => {
+    if (!result || !compatInvite) return;
+    setActiveSection('saju');
+    setActiveSajuTab('compat');
+    setPartnerName(compatInvite.name);
+    setPartnerBirthYear(compatInvite.birthYear);
+    setPartnerBirthMonth(compatInvite.birthMonth);
+    setPartnerBirthDay(compatInvite.birthDay);
+    setPartnerGender(compatInvite.gender);
+    setPartnerFormOpen(true);
+    void handleComparePair({
+      partnerName: compatInvite.name,
+      partnerBirthYear: compatInvite.birthYear,
+      partnerBirthMonth: compatInvite.birthMonth,
+      partnerBirthDay: compatInvite.birthDay,
+      partnerGender: compatInvite.gender,
+    });
+    trackEvent('invite_redeemed');
+    setCompatInvite(null); // 한 번만 실행되도록 소모
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, compatInvite]);
 
   // 오늘의 나풀이(데일리 운세) 생성 — 일주와 오늘 일진의 관계를 바탕으로 한 짧은 오늘의 한마디 + 팩폭 한줄
   const handleGenerateDailyFortune = async (): Promise<DailyFortune | null> => {
@@ -1311,8 +1122,9 @@ export default function App() {
       );
       setDailyFortuneData(data);
       const dateStr = todayDateStr();
-      localStorage.setItem(dailyFortuneCacheKey(result.formData, dateStr), JSON.stringify(data));
+      setCachedItem(dailyFortuneCacheKey(result.formData, dateStr), JSON.stringify(data));
       addBookmark('오늘의 나풀이', `${dateStr} 오늘의 나풀이`, `${data.analysis}\n\n${data.factBomb}`);
+      trackEvent('content_generate', { feature: 'daily_fortune' });
       return data;
     } catch (err: any) {
       showToast(`오늘의 나풀이 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1347,7 +1159,8 @@ export default function App() {
         pillarModal.staticDesc || `${pillarModal.label}은 사주원국을 구성하는 중요한 기둥입니다.`,
       );
       setPillarAiData(prev => ({ ...prev, [pillarModal.key]: text }));
-      localStorage.setItem(pillarCacheKey(result.formData, pillarModal.key), text);
+      setCachedItem(pillarCacheKey(result.formData, pillarModal.key), text);
+      trackEvent('content_generate', { feature: 'pillar_deep', pillar: pillarModal.key });
       return text;
     } catch (err: any) {
       showToast(`기둥 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
@@ -1442,7 +1255,7 @@ export default function App() {
     // localhost 환경에서는 카카오 공유가 동작하지 않습니다.
     // 카카오 개발자 콘솔에 등록된 배포 도메인 URL을 사용해야 합니다.
     const shareUrl = window.location.href.includes('localhost')
-      ? 'https://mbti-delta-red.vercel.app/'
+      ? `${DEPLOY_ORIGIN}/`
       : window.location.href;
 
     // ── 공유 실행 ────────────────────────────────────
@@ -1468,6 +1281,7 @@ export default function App() {
           },
         ],
       });
+      trackEvent('share', { method: 'kakao' });
     } catch (err: any) {
       console.error('Kakao Share error:', err);
       showToast(`카카오 공유 오류: ${err?.message ?? '알 수 없는 오류'}. 카카오 앱 도메인 등록을 확인해주세요.`);
@@ -1609,7 +1423,7 @@ export default function App() {
       // 하단 브랜딩
       ctx.fillStyle = 'rgba(240, 238, 255, 0.4)';
       ctx.font = `400 26px ${fontStack}`;
-      ctx.fillText('mbti-delta-red.vercel.app', W / 2, H - 100);
+      ctx.fillText(DEPLOY_DOMAIN, W / 2, H - 100);
 
       const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('이미지 생성에 실패했습니다.');
@@ -1620,6 +1434,7 @@ export default function App() {
       if (nav.canShare && nav.canShare({ files: [file] })) {
         try {
           await nav.share({ files: [file], title: '나풀이 사주 × MBTI 카드' });
+          trackEvent('share', { method: 'native_share', content: 'profile_card' });
           return;
         } catch {
           // 공유 취소/실패 시 다운로드로 대체
@@ -1631,10 +1446,179 @@ export default function App() {
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
+      trackEvent('download', { content: 'profile_card' });
     } catch (err: any) {
       showToast(`이미지 카드 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
     } finally {
       setImageCardGenerating(false);
+    }
+  };
+
+  // 오늘의 타로 / 나와 닮은 인물처럼 "카드 한 장" 형태의 개별 결과를 이미지로 공유하는 공용 함수.
+  // 메인 프로필 카드(handleDownloadImageCard)와 같은 브랜드 크롬(상단 워터마크·하단 도메인)을
+  // 재사용하되, 중앙에는 카드 하나(이모지 메달리온 + 이름 + 부제 + 배지 + 본문)만 크게 담는다.
+  const handleDownloadPersonaCard = async (opts: {
+    kind: 'tarot' | 'archetype' | 'streak';
+    kicker: string;
+    emoji: string;
+    emojiRotated?: boolean;
+    name: string;
+    subtitle: string;
+    badge: string;
+    bodyText: string;
+    accent: string;
+    accentDark: string;
+    fileName: string;
+    shareTitle: string;
+  }) => {
+    if (!result) return;
+    setPersonaImageGenerating(opts.kind);
+    try {
+      const W = 1080;
+      const H = 1920;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('캔버스를 생성할 수 없습니다.');
+
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+      bgGrad.addColorStop(0, '#1a0b2e');
+      bgGrad.addColorStop(0.55, '#0f0620');
+      bgGrad.addColorStop(1, '#050510');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      for (let i = 0; i < 60; i++) {
+        ctx.globalAlpha = Math.random() * 0.5 + 0.1;
+        ctx.fillStyle = '#f5c842';
+        ctx.beginPath();
+        ctx.arc(Math.random() * W, Math.random() * H * 0.65, Math.random() * 2 + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      ctx.textAlign = 'center';
+      const fontStack = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+
+      ctx.fillStyle = 'rgba(245, 200, 66, 0.85)';
+      ctx.font = `600 32px ${fontStack}`;
+      ctx.fillText(`🔮 나풀이 · ${opts.kicker}`, W / 2, 170);
+
+      ctx.fillStyle = '#f0eeff';
+      ctx.font = `700 44px ${fontStack}`;
+      ctx.fillText(`${result.formData.name}님`, W / 2, 260);
+
+      // 메달리온
+      const badgeCx = W / 2;
+      const badgeCy = 460;
+      const badgeR = 130;
+      const badgeGrad = ctx.createRadialGradient(badgeCx - 35, badgeCy - 40, 15, badgeCx, badgeCy, badgeR);
+      badgeGrad.addColorStop(0, opts.accent);
+      badgeGrad.addColorStop(0.55, opts.accent);
+      badgeGrad.addColorStop(1, opts.accentDark);
+      ctx.save();
+      ctx.shadowColor = opts.accent;
+      ctx.shadowBlur = 55;
+      ctx.fillStyle = badgeGrad;
+      ctx.beginPath();
+      ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.font = `400 120px ${fontStack}`;
+      if (opts.emojiRotated) {
+        ctx.translate(badgeCx, badgeCy + 45);
+        ctx.rotate(Math.PI);
+        ctx.fillText(opts.emoji, 0, 0);
+      } else {
+        ctx.fillText(opts.emoji, badgeCx, badgeCy + 45);
+      }
+      ctx.restore();
+
+      // 이름 + 부제
+      ctx.fillStyle = '#f5c842';
+      ctx.font = `900 68px "Noto Serif KR", serif`;
+      ctx.fillText(opts.name, W / 2, 700);
+      ctx.fillStyle = 'rgba(240, 238, 255, 0.6)';
+      ctx.font = `400 26px ${fontStack}`;
+      ctx.fillText(opts.subtitle, W / 2, 740);
+
+      // 배지
+      ctx.font = `600 24px ${fontStack}`;
+      const badgeTextWidth = ctx.measureText(opts.badge).width;
+      const badgePadX = 26;
+      ctx.save();
+      ctx.fillStyle = 'rgba(139, 92, 246, 0.18)';
+      ctx.strokeStyle = 'rgba(245, 200, 66, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      (ctx as any).roundRect(W / 2 - badgeTextWidth / 2 - badgePadX, 775, badgeTextWidth + badgePadX * 2, 52, 26);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#f0eeff';
+      ctx.fillText(opts.badge, W / 2, 809);
+
+      // 본문 텍스트 박스 — 팩폭 한줄평·타로 해석처럼 길이가 들쭉날쭉한 텍스트라 최대 9줄로
+      // 안전하게 자르고(그 이상은 "…") 카드 하단(도메인 워터마크)과 겹치지 않게 함.
+      ctx.font = `500 40px ${fontStack}`;
+      const MAX_BODY_LINES = 9;
+      let lines = wrapCanvasText(ctx, opts.bodyText, W - 200);
+      if (lines.length > MAX_BODY_LINES) {
+        lines = [...lines.slice(0, MAX_BODY_LINES - 1), `${lines[MAX_BODY_LINES - 1]}…`];
+      }
+      const lineHeight = 58;
+      const boxPaddingY = 56;
+      const boxTop = 900;
+      const boxHeight = lines.length * lineHeight + boxPaddingY * 2 - 16;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+      ctx.strokeStyle = 'rgba(245, 200, 66, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      (ctx as any).roundRect(80, boxTop, W - 160, boxHeight, 24);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = '#f0eeff';
+      let y = boxTop + boxPaddingY + 30;
+      lines.forEach(line => {
+        ctx.fillText(line, W / 2, y);
+        y += lineHeight;
+      });
+
+      ctx.fillStyle = 'rgba(240, 238, 255, 0.4)';
+      ctx.font = `400 26px ${fontStack}`;
+      ctx.fillText(DEPLOY_DOMAIN, W / 2, H - 100);
+
+      const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('이미지 생성에 실패했습니다.');
+
+      const file = new File([blob], opts.fileName, { type: 'image/png' });
+      const nav = navigator as any;
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: opts.shareTitle });
+          trackEvent('share', { method: 'native_share', content: opts.kind });
+          return;
+        } catch {
+          // 공유 취소/실패 시 다운로드로 대체
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = opts.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      trackEvent('download', { content: opts.kind });
+    } catch (err: any) {
+      showToast(`이미지 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setPersonaImageGenerating(null);
     }
   };
 
@@ -1718,7 +1702,7 @@ export default function App() {
               );
               pillarAiForPdf[def.key] = text;
               setPillarAiData(prev => ({ ...prev, [def.key]: text }));
-              localStorage.setItem(pillarCacheKey(result.formData, def.key), text);
+              setCachedItem(pillarCacheKey(result.formData, def.key), text);
             } catch {
               // 개별 기둥 해설 실패는 무시하고 나머지 리포트는 계속 진행
             }
@@ -2111,6 +2095,7 @@ export default function App() {
 
       printWindow.document.write(htmlContent);
       printWindow.document.close();
+      trackEvent('download', { content: 'pdf' });
     } catch (err: any) {
       showToast(`PDF 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
     } finally {
@@ -2314,7 +2299,7 @@ export default function App() {
             formData.birthDay,
             formData.hourUnknown ? '시간 모름' : hourBranch.name,
           );
-          localStorage.setItem(introCacheKey, JSON.stringify(aiIntro));
+          setCachedItem(introCacheKey, JSON.stringify(aiIntro));
         } catch (err: any) {
           errMsg = err?.message ?? '나풀이 해석 오류가 발생했습니다.';
         }
@@ -2324,6 +2309,7 @@ export default function App() {
       setResult({ formData: { ...formData }, sajuResult, hourBranch, aiIntro, astrologyResult, astrologyTimeConfidence });
       setIntroError(errMsg);
       setStep('result');
+      trackEvent('result_view', { mbti: formData.mbti, hour_unknown: formData.hourUnknown });
       void trackResultViewAndMaybeRequestReview();
     };
 
@@ -2629,6 +2615,15 @@ export default function App() {
         {/* ── 입력 화면 ───────────────────────────── */}
         {step === 'input' && (
           <div className="animate-fade-in">
+            {/* 💑 궁합 초대 링크로 들어온 경우 — 내 정보를 입력하면 자동으로 궁합을 보여준다는 안내 */}
+            {compatInvite && (
+              <div className="glass-card-gold" style={{ padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>💑</span>
+                <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                  <strong>{compatInvite.name}</strong>님이 궁합을 보자고 초대했어요! 아래에 내 정보를 입력하면 결과 화면에서 바로 정밀 궁합을 확인할 수 있어요.
+                </div>
+              </div>
+            )}
             {/* 히어로 */}
             <div className="hero">
               <div className="hero-badge">
@@ -3030,12 +3025,40 @@ export default function App() {
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
 
-            {/* 🔥 연속 방문일수(스트릭) — 2일차부터 노출(1일차는 아직 "연속"이라 할 게 없어서) */}
-            {streakCount >= 2 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--gold)', fontWeight: 700 }}>
-                <span>🔥 {streakCount}일 연속 방문 중이에요!</span>
-              </div>
-            )}
+            {/* 🔥 연속 방문일수(스트릭) — 2일차부터 노출(1일차는 아직 "연속"이라 할 게 없어서).
+                3일차(첫 배지 티어)부터는 배지 이름 + 자랑용 카드 저장 버튼도 함께 노출. */}
+            {streakCount >= 2 && (() => {
+              const tier = getHighestTier(streakCount);
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: 'var(--gold)', fontWeight: 700 }}>
+                    🔥 {streakCount}일 연속 방문 중이에요!{tier && ` · ${tier.emoji} ${tier.label} 배지`}
+                  </span>
+                  {tier && result && (
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 11 }}
+                      disabled={personaImageGenerating === 'streak'}
+                      onClick={() => handleDownloadPersonaCard({
+                        kind: 'streak',
+                        kicker: '연속 방문 기록',
+                        emoji: tier.emoji,
+                        name: `${streakCount}일 연속`,
+                        subtitle: `${tier.label} 배지 획득`,
+                        badge: '🔥 STREAK',
+                        bodyText: `${result.formData.name}님은 ${streakCount}일 연속으로 나풀이를 찾아주셨어요. 꾸준함이 만든 이 기록, 자랑해도 좋아요!`,
+                        accent: '#f5c842',
+                        accentDark: '#92650a',
+                        fileName: `${result.formData.name}_${streakCount}일연속.png`,
+                        shareTitle: '나풀이 연속 방문 기록',
+                      })}
+                    >
+                      {personaImageGenerating === 'streak' ? '⏳' : '🖼️ 배지 카드'}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 매일 알림 (네이티브 앱 전용) */}
             {isNativePlatform() && (
@@ -3138,6 +3161,30 @@ export default function App() {
                       >
                         🔖 저장
                       </button>
+                      <button
+                        className="btn-secondary"
+                        style={{ padding: '6px 12px', fontSize: 11 }}
+                        disabled={personaImageGenerating === 'tarot'}
+                        onClick={() => {
+                          const { accent, accentDark } = tarotCardTheme(card);
+                          handleDownloadPersonaCard({
+                            kind: 'tarot',
+                            kicker: '오늘의 타로',
+                            emoji: card.emoji,
+                            emojiRotated: reversed,
+                            name: card.name,
+                            subtitle: card.nameEn,
+                            badge: reversed ? '🔄 역방향' : '✨ 정방향',
+                            bodyText: tarotData,
+                            accent,
+                            accentDark,
+                            fileName: `${result.formData.name}_오늘의타로.png`,
+                            shareTitle: '나풀이 오늘의 타로',
+                          });
+                        }}
+                      >
+                        {personaImageGenerating === 'tarot' ? '⏳' : '🖼️ 이미지'}
+                      </button>
                     </div>
                   );
                 })()}
@@ -3206,7 +3253,7 @@ export default function App() {
                     <button
                       className="btn-secondary"
                       style={{ padding: '6px 12px', fontSize: 11 }}
-                      onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.factBomb}`)}
+                      onClick={() => addBookmark('오늘의 트랜짓', `${todayDateStr()} 오늘의 트랜짓`, `${transitData.analysis}\n\n${transitData.luckyWindow}`)}
                     >
                       🔖 저장
                     </button>
@@ -3225,9 +3272,9 @@ export default function App() {
                   <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 14px' }}>
                     {transitData.analysis}
                   </p>
-                  <div className="fact-bomb-box">
-                    <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
-                    <div className="fact-bomb-content">{transitData.factBomb}</div>
+                  <div className="lucky-window-box">
+                    <div className="lucky-window-title">🕐 오늘의 행운 시간대</div>
+                    <div className="lucky-window-content">{transitData.luckyWindow}</div>
                   </div>
                 </>
               ) : (
@@ -3625,6 +3672,14 @@ export default function App() {
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
                   위의 띠 궁합은 일반적인 경향이고, 상대방의 실제 생년월일을 입력하면 두 사람의 진짜 일주(日柱)를 서로 비교한 정밀 궁합을 볼 수 있어요.
                 </p>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: 12, marginBottom: 14 }}
+                  onClick={handleShareCompatInvite}
+                  disabled={inviteLinkCopying}
+                >
+                  {inviteLinkCopying ? '⏳ 링크 준비 중...' : '🔗 나와 궁합 볼 초대 링크 보내기'}
+                </button>
                 {!partnerFormOpen && !pairCompatText && (
                   <button className="btn-primary" onClick={() => setPartnerFormOpen(true)}>
                     + 상대방 입력하고 정밀 궁합 보기
@@ -3995,13 +4050,37 @@ export default function App() {
                             <>
                               <div className="flex items-center justify-between">
                                 <div className="tab-pane-title">🎭 {result.formData.name} 님과 닮은 인물</div>
-                                <button
-                                  className="btn-secondary"
-                                  style={{ padding: '6px 12px', fontSize: 11 }}
-                                  onClick={() => addBookmark('닮은 인물', `${result.formData.name}님과 닮은 인물`, `${figure?.name ?? ''}\n\n${archetypeData.analysis}\n\n${archetypeData.factBomb}`)}
-                                >
-                                  🔖 저장
-                                </button>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button
+                                    className="btn-secondary"
+                                    style={{ padding: '6px 12px', fontSize: 11 }}
+                                    onClick={() => addBookmark('닮은 인물', `${result.formData.name}님과 닮은 인물`, `${figure?.name ?? ''}\n\n${archetypeData.analysis}\n\n${archetypeData.factBomb}`)}
+                                  >
+                                    🔖 저장
+                                  </button>
+                                  {figure && (
+                                    <button
+                                      className="btn-secondary"
+                                      style={{ padding: '6px 12px', fontSize: 11 }}
+                                      disabled={personaImageGenerating === 'archetype'}
+                                      onClick={() => handleDownloadPersonaCard({
+                                        kind: 'archetype',
+                                        kicker: '나와 닮은 인물',
+                                        emoji: figure.emoji,
+                                        name: figure.name,
+                                        subtitle: figure.origin,
+                                        badge: figure.traits[0],
+                                        bodyText: archetypeData.factBomb,
+                                        accent: '#8b5cf6',
+                                        accentDark: '#4c1d95',
+                                        fileName: `${result.formData.name}_닮은인물_${figure.name}.png`,
+                                        shareTitle: '나풀이 나와 닮은 인물',
+                                      })}
+                                    >
+                                      {personaImageGenerating === 'archetype' ? '⏳' : '🖼️ 이미지'}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               {figure && (
                                 <div
@@ -4375,7 +4454,10 @@ export default function App() {
                     <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                       ☁️ 로그인하면 기기를 바꿔도 다이어리 기록이 그대로 유지돼요 (로그인 안 해도 지금처럼 계속 사용 가능해요)
                     </div>
-                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignIn}>구글로 로그인</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignIn}>구글로 로그인</button>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={handleSignInApple}>Apple로 로그인</button>
+                    </div>
                   </>
                 )}
               </div>

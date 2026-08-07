@@ -1232,6 +1232,30 @@ body {
   line-height: 1.7;
 }
 
+/* 오늘의 트랜짓 전용 — .fact-bomb-box(위트 있는 팩폭, 빨강/주황)와 구분되는 파랑 톤.
+   "웃고 넘기는 농담"이 아니라 "오늘 실제로 참고할 시간대"라는 실용적 성격을 색으로도 드러냄. */
+.lucky-window-box {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(139, 92, 246, 0.08));
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 16px;
+  padding: 18px 20px;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.08);
+}
+.lucky-window-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #60a5fa;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+.lucky-window-content {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dbeafe;
+  line-height: 1.7;
+}
+
 .prescription-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(245, 200, 66, 0.1);

@@ -5,12 +5,14 @@
  */
 import {
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signOut,
   deleteUser,
   reauthenticateWithPopup,
   type User,
+  type AuthProvider,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -29,6 +31,25 @@ export async function signInWithGoogle(): Promise<User> {
   if (!auth) throw new Error('클라우드 동기화가 설정되지 않았습니다.');
   const result = await signInWithPopup(auth, new GoogleAuthProvider());
   return result.user;
+}
+
+// [2026-08-07] iOS 앱에 구글 등 제3자 소셜 로그인이 하나라도 있으면 Apple App Store 심사
+// 가이드라인 4.8에 따라 "Sign in with Apple"도 동등하게 제공해야 함(안 지키면 리젝 사유).
+// 사용 전 Firebase 콘솔에서 Apple 로그인 제공자를 켜고, Apple 개발자 계정 + Xcode에서
+// "Sign in with Apple" 기능(capability)을 추가해야 실제로 동작함(코드만으로는 불가 — 계획안.md 참고).
+export async function signInWithApple(): Promise<User> {
+  if (!auth) throw new Error('클라우드 동기화가 설정되지 않았습니다.');
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  const result = await signInWithPopup(auth, provider);
+  return result.user;
+}
+
+function reauthProviderFor(user: User): AuthProvider {
+  return user.providerData[0]?.providerId === 'apple.com'
+    ? new OAuthProvider('apple.com')
+    : new GoogleAuthProvider();
 }
 
 export async function signOutUser(): Promise<void> {
@@ -52,7 +73,9 @@ export async function deleteAccount(user: User): Promise<void> {
     await deleteUser(user);
   } catch (err: any) {
     if (err?.code === 'auth/requires-recent-login') {
-      await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      // 사용자가 애초에 로그인했던 방식(구글/애플)과 동일한 제공자로 재인증해야 함 —
+      // 항상 구글로 재시도하면 애플로 가입한 사용자는 계정을 영영 삭제할 수 없게 됨.
+      await reauthenticateWithPopup(user, reauthProviderFor(user));
       await deleteUser(user);
     } else {
       throw err;

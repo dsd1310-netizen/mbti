@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mbti-delta-red.vercel.app/sitemap.xml

@@ -6,8 +6,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🔮 나풀이 — 사주 × MBTI 풀이</title>
     <meta name="description" content="절기(節氣) 기준 정밀 만세력으로 사주원국을 산출하고, 나풀이가 MBTI와 융합 분석하는 사주 해석 앱입니다." />
+    <link rel="canonical" href="https://mbti-delta-red.vercel.app/" />
+    <!-- 소셜 공유 미리보기 — 카카오톡은 자체 SDK(App.tsx handleKakaoShare)로 이미지가 뜨지만,
+         그 외(문자메시지/디스코드/트위터 등)로 링크가 공유될 때(예: 궁합 초대 링크)는 이 태그가
+         없으면 이미지 없는 텍스트 링크로만 보임. og-image.png는 Vite 해시가 안 붙는 public/ 루트에
+         둬서 URL이 항상 고정되도록 함(src/assets는 빌드 시 파일명에 해시가 붙어 정적 meta에서 못 씀). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mbti-delta-red.vercel.app/" />
     <meta property="og:title" content="나풀이 — 사주 × MBTI 풀이" />
     <meta property="og:description" content="나풀이에서 나만의 사주 × MBTI 심층 분석을 경험해보세요." />
+    <meta property="og:image" content="https://mbti-delta-red.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="343" />
+    <meta property="og:image:height" content="361" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="나풀이 — 사주 × MBTI 풀이" />
+    <meta name="twitter:description" content="나풀이에서 나만의 사주 × MBTI 심층 분석을 경험해보세요." />
+    <meta name="twitter:image" content="https://mbti-delta-red.vercel.app/og-image.png" />
+    <!-- PWA: 앱스토어 없이도 "홈 화면에 추가" + 오프라인 접근이 가능하도록 -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#8b5cf6" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="나풀이" />
     <!-- 카카오톡 공유 SDK -->
     <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"></script>
   </head>
