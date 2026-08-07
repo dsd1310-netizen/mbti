@@ -2876,6 +2876,16 @@ export default function App() {
                   <div className="profile-badge-row">
                     <span className="profile-mbti-badge">{result.formData.mbti}</span>
                     <span className="profile-score-badge">✦ 정밀 만세력 산출 완료</span>
+                    {/* 🔥 연속 방문 스트릭 — 프로필 상단에 항상 보이는 위치로 이동(예전엔 "오늘" 탭
+                        안에 있어서 눈에 잘 안 띈다는 피드백). 2일차부터 노출, 3일차(첫 배지)부터 티어 이름 함께 표시. */}
+                    {streakCount >= 2 && (() => {
+                      const tier = getHighestTier(streakCount);
+                      return (
+                        <span className="profile-streak-badge">
+                          🔥 {streakCount}일 연속{tier && ` · ${tier.emoji} ${tier.label}`}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="profile-name">{result.formData.name} 님의 명리 리포트</div>
                   <div className="profile-birth">
@@ -2915,6 +2925,32 @@ export default function App() {
                     >
                       {imageCardGenerating ? '⏳ 카드 생성 중...' : '📸 이미지 카드 저장'}
                     </button>
+                    {(() => {
+                      const tier = getHighestTier(streakCount);
+                      if (!tier) return null;
+                      return (
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '10px 14px', fontSize: '13px' }}
+                          disabled={personaImageGenerating === 'streak'}
+                          onClick={() => handleDownloadPersonaCard({
+                            kind: 'streak',
+                            kicker: '연속 방문 기록',
+                            emoji: tier.emoji,
+                            name: `${streakCount}일 연속`,
+                            subtitle: `${tier.label} 배지 획득`,
+                            badge: '🔥 STREAK',
+                            bodyText: `${result.formData.name}님은 ${streakCount}일 연속으로 나풀이를 찾아주셨어요. 꾸준함이 만든 이 기록, 자랑해도 좋아요!`,
+                            accent: '#f5c842',
+                            accentDark: '#92650a',
+                            fileName: `${result.formData.name}_${streakCount}일연속.png`,
+                            shareTitle: '나풀이 연속 방문 기록',
+                          })}
+                        >
+                          {personaImageGenerating === 'streak' ? '⏳ 카드 생성 중...' : `${tier.emoji} 배지 카드 저장`}
+                        </button>
+                      );
+                    })()}
                   </>
                 )}
               </div>
@@ -3024,41 +3060,6 @@ export default function App() {
             {/* ✨ 오늘: 오늘의 나풀이 + 오늘의 타로 + 오늘의 트랜짓 — 매일 새로 보는 콘텐츠 3종을 한곳에 모음 */}
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
-
-            {/* 🔥 연속 방문일수(스트릭) — 2일차부터 노출(1일차는 아직 "연속"이라 할 게 없어서).
-                3일차(첫 배지 티어)부터는 배지 이름 + 자랑용 카드 저장 버튼도 함께 노출. */}
-            {streakCount >= 2 && (() => {
-              const tier = getHighestTier(streakCount);
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13, color: 'var(--gold)', fontWeight: 700 }}>
-                    🔥 {streakCount}일 연속 방문 중이에요!{tier && ` · ${tier.emoji} ${tier.label} 배지`}
-                  </span>
-                  {tier && result && (
-                    <button
-                      className="btn-secondary"
-                      style={{ padding: '6px 12px', fontSize: 11 }}
-                      disabled={personaImageGenerating === 'streak'}
-                      onClick={() => handleDownloadPersonaCard({
-                        kind: 'streak',
-                        kicker: '연속 방문 기록',
-                        emoji: tier.emoji,
-                        name: `${streakCount}일 연속`,
-                        subtitle: `${tier.label} 배지 획득`,
-                        badge: '🔥 STREAK',
-                        bodyText: `${result.formData.name}님은 ${streakCount}일 연속으로 나풀이를 찾아주셨어요. 꾸준함이 만든 이 기록, 자랑해도 좋아요!`,
-                        accent: '#f5c842',
-                        accentDark: '#92650a',
-                        fileName: `${result.formData.name}_${streakCount}일연속.png`,
-                        shareTitle: '나풀이 연속 방문 기록',
-                      })}
-                    >
-                      {personaImageGenerating === 'streak' ? '⏳' : '🖼️ 배지 카드'}
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
 
             {/* 매일 알림 (네이티브 앱 전용) */}
             {isNativePlatform() && (
