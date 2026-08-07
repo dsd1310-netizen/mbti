@@ -1508,17 +1508,23 @@ export default function App() {
       ctx.textAlign = 'center';
       const fontStack = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 
+      // 실제 카드 이미지가 있는 경우(오늘의 타로)는 카드 자체를 훨씬 크게 키우기 위해
+      // 레이아웃 좌표 전체를 별도로 잡음 — 이모지 원형 배지(닮은 인물·스트릭 배지)는 기존 좌표 그대로.
+      const layout = cardImage
+        ? { kickerY: 140, nameY: 205, badgeCy: 545, cardW: 310, cardH: 537, resultNameY: 855, subtitleY: 893, badgeBoxY: 925, badgeTextY: 958, bodyBoxTop: 1040 }
+        : { kickerY: 170, nameY: 260, badgeCy: 460, cardW: 0, cardH: 0, resultNameY: 700, subtitleY: 740, badgeBoxY: 775, badgeTextY: 809, bodyBoxTop: 900 };
+
       ctx.fillStyle = 'rgba(245, 200, 66, 0.85)';
       ctx.font = `600 32px ${fontStack}`;
-      ctx.fillText(`🔮 나풀이 · ${opts.kicker}`, W / 2, 170);
+      ctx.fillText(`🔮 나풀이 · ${opts.kicker}`, W / 2, layout.kickerY);
 
       ctx.fillStyle = '#f0eeff';
       ctx.font = `700 44px ${fontStack}`;
-      ctx.fillText(`${result.formData.name}님`, W / 2, 260);
+      ctx.fillText(`${result.formData.name}님`, W / 2, layout.nameY);
 
       // 메달리온 — 실제 카드 이미지가 있으면(오늘의 타로) 원형 배경은 생략(사각 카드와 겹쳐 지저분해짐)
       const badgeCx = W / 2;
-      const badgeCy = 460;
+      const badgeCy = layout.badgeCy;
       const badgeR = 130;
       if (!cardImage) {
         const badgeGrad = ctx.createRadialGradient(badgeCx - 35, badgeCy - 40, 15, badgeCx, badgeCy, badgeR);
@@ -1536,9 +1542,9 @@ export default function App() {
       }
       ctx.save();
       if (cardImage) {
-        // 오늘의 타로 — 실제 카드 스캔 이미지를 세로 카드 모양(둥근 모서리)으로 그림
-        const cardW = 230;
-        const cardH = 398; // public/tarot 이미지와 같은 500:866 비율
+        // 오늘의 타로 — 실제 카드 스캔 이미지를 세로 카드 모양(둥근 모서리)으로 그림(500:866 비율 유지)
+        const cardW = layout.cardW;
+        const cardH = layout.cardH;
         ctx.translate(badgeCx, badgeCy);
         if (opts.emojiRotated) ctx.rotate(Math.PI);
         ctx.beginPath();
@@ -1592,10 +1598,10 @@ export default function App() {
       // 이름 + 부제
       ctx.fillStyle = '#f5c842';
       ctx.font = `900 68px "Noto Serif KR", serif`;
-      ctx.fillText(opts.name, W / 2, 700);
+      ctx.fillText(opts.name, W / 2, layout.resultNameY);
       ctx.fillStyle = 'rgba(240, 238, 255, 0.6)';
       ctx.font = `400 26px ${fontStack}`;
-      ctx.fillText(opts.subtitle, W / 2, 740);
+      ctx.fillText(opts.subtitle, W / 2, layout.subtitleY);
 
       // 배지
       ctx.font = `600 24px ${fontStack}`;
@@ -1606,12 +1612,12 @@ export default function App() {
       ctx.strokeStyle = 'rgba(245, 200, 66, 0.4)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      (ctx as any).roundRect(W / 2 - badgeTextWidth / 2 - badgePadX, 775, badgeTextWidth + badgePadX * 2, 52, 26);
+      (ctx as any).roundRect(W / 2 - badgeTextWidth / 2 - badgePadX, layout.badgeBoxY, badgeTextWidth + badgePadX * 2, 52, 26);
       ctx.fill();
       ctx.stroke();
       ctx.restore();
       ctx.fillStyle = '#f0eeff';
-      ctx.fillText(opts.badge, W / 2, 809);
+      ctx.fillText(opts.badge, W / 2, layout.badgeTextY);
 
       // 본문 텍스트 박스 — 팩폭 한줄평·타로 해석처럼 길이가 들쭉날쭉한 텍스트라 최대 9줄로
       // 안전하게 자르고(그 이상은 "…") 카드 하단(도메인 워터마크)과 겹치지 않게 함.
@@ -1623,7 +1629,7 @@ export default function App() {
       }
       const lineHeight = 58;
       const boxPaddingY = 56;
-      const boxTop = 900;
+      const boxTop = layout.bodyBoxTop;
       const boxHeight = lines.length * lineHeight + boxPaddingY * 2 - 16;
       ctx.save();
       ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
