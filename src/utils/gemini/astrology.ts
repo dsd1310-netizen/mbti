@@ -121,6 +121,64 @@ ${formatAstrologyAspects(result)}
   return callGeminiPlainApi(apiKey, prompt, '서양점성술 심화 해석을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
+// ─── 행성/하우스 개별 클릭 심화해설 (사주 4기둥 클릭 해설과 동일한 패턴) ─────
+/**
+ * 행성 하나를 클릭했을 때의 개인화 해설 — 이 행성이 이 사람의 별자리·하우스에 있다는
+ * 구체적 배치를 근거로, 좋을 때/나쁠 때 의미가 실생활에서 어떻게 드러나는지 짧게 풀어줌.
+ */
+export async function generatePlanetPlacementInterpretation(
+  apiKey: string,
+  name: string,
+  mbti: string,
+  planetName: string,
+  signName: string,
+  houseNumber: number,
+  houseMeaning: string,
+  dignityLabel: string | null,
+): Promise<string> {
+  const prompt = `당신은 서양 고전점성술(홀사인 하우스 시스템) 전문가입니다.
+${name} 님(MBTI ${mbti})의 출생 차트에서 [${planetName}]이 [${signName}자리 · ${houseNumber}하우스(${houseMeaning})]에 있습니다.${dignityLabel ? ` 품위는 [${dignityLabel}]입니다.` : ''}
+
+【 작성 지침 】
+1. 이 행성이 이 별자리·하우스 조합에서 구체적으로 어떤 성향·에너지로 드러나는지 설명하세요.
+2. ${dignityLabel ? '품위(강함/약함)가 이 사람에게 어떻게 작용하는지도 짚어주세요.' : ''}
+3. MBTI(${mbti}) 성향과 자연스럽게 엮어서 "이 사람만의" 특징으로 느껴지게 작성하세요.
+4. 실생활 구체적 예시를 1개 이상 넣어주세요.
+5. 한자·전문용어를 그대로 나열하지 말고 쉬운 비유를 사용하고, 존댓말로 4~5줄 내외로 작성하세요. JSON이나 마크다운 없이 일반 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, `${planetName}이 ${signName}자리 ${houseNumber}하우스에 있다는 건, 이 영역에서 이 행성 특유의 에너지가 발휘된다는 뜻입니다.`);
+}
+
+/**
+ * 하우스 하나를 클릭했을 때의 개인화 해설 — 이 하우스에 실제로 자리한 행성이 있으면
+ * 그 행성까지 반영해 해설(빈 하우스면 그 별자리의 성향만으로 해설).
+ */
+export async function generateHousePlacementInterpretation(
+  apiKey: string,
+  name: string,
+  mbti: string,
+  houseNumber: number,
+  houseMeaning: string,
+  signName: string,
+  planetsInHouse: string[],
+): Promise<string> {
+  const planetsNote = planetsInHouse.length > 0
+    ? `이 하우스에는 ${planetsInHouse.join(', ')}이(가) 자리하고 있습니다.`
+    : '이 하우스에 자리한 행성은 없지만, 별자리 자체의 기운은 여전히 작용합니다.';
+
+  const prompt = `당신은 서양 고전점성술(홀사인 하우스 시스템) 전문가입니다.
+${name} 님(MBTI ${mbti})의 출생 차트에서 [${houseNumber}하우스(${houseMeaning})]는 [${signName}자리]에 있습니다. ${planetsNote}
+
+【 작성 지침 】
+1. 이 하우스가 상징하는 삶의 영역(${houseMeaning})이 ${signName}자리의 기운을 받아 이 사람에게 어떻게 나타나는지 설명하세요.
+2. ${planetsInHouse.length > 0 ? '이 하우스에 있는 행성이 이 영역에 어떤 색을 더하는지도 짚어주세요.' : ''}
+3. MBTI(${mbti}) 성향과 자연스럽게 엮어서 "이 사람만의" 특징으로 느껴지게 작성하세요.
+4. 실생활 구체적 예시를 1개 이상 넣어주세요.
+5. 한자·전문용어를 그대로 나열하지 말고 쉬운 비유를 사용하고, 존댓말로 4~5줄 내외로 작성하세요. JSON이나 마크다운 없이 일반 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, `${houseNumber}하우스(${houseMeaning})가 ${signName}자리에 있다는 건, 이 삶의 영역이 그 별자리 특유의 색으로 물든다는 뜻입니다.`);
+}
+
 // ─── 오늘의 트랜짓 운세 ─────────────────────────────────────────
 const NATAL_POINT_LABEL: Record<'sun' | 'moon' | 'ascendant', string> = {
   sun: '태양', moon: '달', ascendant: '어센던트',

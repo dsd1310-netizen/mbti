@@ -191,6 +191,10 @@ export function astrologyCacheKey(f: FormData, city: string): string {
 export function astrologyDeepCacheKey(f: FormData, city: string): string {
   return `${astrologyCacheKey(f, city)}_deep`;
 }
+// 행성/하우스 개별 클릭 심화해설 캐시 — placementKey는 "planet_sun" / "house_4"처럼 구분되는 값.
+export function astroPlacementCacheKey(f: FormData, city: string, placementKey: string): string {
+  return `${astrologyCacheKey(f, city)}_${placementKey}`;
+}
 export function todayDateStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

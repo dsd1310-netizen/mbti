@@ -18,6 +18,7 @@ import {
   generateElementSummaryDeepInterpretation,
   generateCompatibilitySummaryDeepInterpretation,
   generateAstrologyInterpretation, generateAstrologyDeepInterpretation, AstrologyInterpretation,
+  generatePlanetPlacementInterpretation, generateHousePlacementInterpretation,
   generateTransitInterpretation, DailyTransitFortune,
   generateTarotInterpretation,
   generatePairCompatibilityInterpretation,
@@ -28,7 +29,7 @@ import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
-import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult } from './utils/astrologyCalculator';
+import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult, PlanetKey } from './utils/astrologyCalculator';
 import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
@@ -47,7 +48,7 @@ import {
   fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
   elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
   unseDeepCacheKey, elementSummaryDeepCacheKey, compatSummaryDeepCacheKey, isStaleDeepFallbackText,
-  pillarCacheKey, astrologyCacheKey, astrologyDeepCacheKey, todayDateStr, tarotCardTheme,
+  pillarCacheKey, astrologyCacheKey, astrologyDeepCacheKey, astroPlacementCacheKey, todayDateStr, tarotCardTheme,
   dailyFortuneCacheKey, transitCacheKey, tarotCacheKey, pairCompatCacheKey,
   PairCompatHistoryEntry, getPairCompatHistory, addPairCompatHistoryEntry,
   chatCacheKey, CHAT_DISPLAY_LIMIT, CHAT_CONTEXT_TURNS, archetypeCacheKey,
@@ -120,6 +121,12 @@ export default function App() {
   const [pillarModal, setPillarModal] = useState<{ key: PillarKey; label: string; hanjaText: string; koreanText: string; staticDesc?: string } | null>(null);
   const [pillarAiData, setPillarAiData] = useState<Partial<Record<PillarKey, string>>>({});
   const [pillarAiLoading, setPillarAiLoading] = useState(false);
+
+  // 🪐 별자리 행성/하우스 클릭 시 AI 심층 해설 — 사주 4기둥 클릭 패턴과 동일.
+  // dataKey: 행성이면 "planet_sun", 하우스면 "house_4"(0-based 인덱스) 형태로 구분.
+  const [astroModal, setAstroModal] = useState<{ dataKey: string; title: string; staticDesc: string } | null>(null);
+  const [astroPlacementAiData, setAstroPlacementAiData] = useState<Record<string, string>>({});
+  const [astroPlacementAiLoading, setAstroPlacementAiLoading] = useState(false);
 
   const [fengShuiText, setFengShuiText] = useState<string | null>(null);
   const [fengShuiLoading, setFengShuiLoading] = useState(false);
@@ -435,6 +442,21 @@ export default function App() {
       if (cached) loaded[k] = cached;
     });
     setPillarAiData(loaded);
+  }, [result]);
+
+  // 🪐 별자리 행성/하우스 클릭 AI 심층 해설 캐시 로드 — 행성 7개 + 하우스 12개, 총 19개 키를 확인.
+  useEffect(() => {
+    if (!result) { setAstroPlacementAiData({}); return; }
+    const loaded: Record<string, string> = {};
+    const dataKeys = [
+      ...result.astrologyResult.planets.map(p => `planet_${p.key}`),
+      ...result.astrologyResult.houseSignIndexes.map((_, i) => `house_${i}`),
+    ];
+    dataKeys.forEach(k => {
+      const cached = localStorage.getItem(astroPlacementCacheKey(result.formData, result.formData.birthCity, k));
+      if (cached) loaded[k] = cached;
+    });
+    setAstroPlacementAiData(loaded);
   }, [result]);
 
   const showToast = (msg: string) => {
@@ -1170,6 +1192,78 @@ export default function App() {
       return null;
     } finally {
       setPillarAiLoading(false);
+    }
+  };
+
+  // 🪐 별자리 행성 클릭 → AI 심층 해설 모달 열기(정적 좋을때/나쁠때/상징인물 설명은 즉시 표시)
+  const handleAstroPlanetClick = (planetKey: PlanetKey) => {
+    if (!result) return;
+    const p = result.astrologyResult.planets.find(x => x.key === planetKey);
+    if (!p) return;
+    const info = PLANETS.find(x => x.key === planetKey)!;
+    const sign = ZODIAC_SIGNS[p.signIndex];
+    const dignityLabel = p.dignity ? DIGNITY_LABEL[p.dignity] : null;
+    setSelectedModal(null);
+    setAstroModal({
+      dataKey: `planet_${planetKey}`,
+      title: `${info.emoji} ${info.name} · ${sign.name} ${p.houseIndex + 1}하우스`,
+      staticDesc: `✨ 좋을 때: ${info.goodMeaning}\n⚠️ 나쁠 때: ${info.badMeaning}\n👤 상징 인물: ${info.person}${dignityLabel ? `\n📐 품위: ${dignityLabel}` : ''}`,
+    });
+  };
+
+  // 🪐 별자리 하우스 클릭 → AI 심층 해설 모달 열기
+  const handleAstroHouseClick = (houseIndex: number) => {
+    if (!result) return;
+    const house = HOUSES[houseIndex];
+    const sign = ZODIAC_SIGNS[result.astrologyResult.houseSignIndexes[houseIndex]];
+    setSelectedModal(null);
+    setAstroModal({
+      dataKey: `house_${houseIndex}`,
+      title: `${houseIndex + 1}하우스 · ${sign.name}`,
+      staticDesc: `${house.meaning}\n${house.strength}${house.favorability ? ` · ${house.favorability}` : ''}`,
+    });
+  };
+
+  const handleGenerateAstroPlacementAi = async (): Promise<string | null> => {
+    if (!result || !astroModal) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setAstroPlacementAiLoading(true);
+    try {
+      const [kind, rawKey] = astroModal.dataKey.split('_');
+      let text: string;
+      if (kind === 'planet') {
+        const planetKey = rawKey as PlanetKey;
+        const p = result.astrologyResult.planets.find(x => x.key === planetKey)!;
+        const info = PLANETS.find(x => x.key === planetKey)!;
+        const sign = ZODIAC_SIGNS[p.signIndex];
+        text = await generatePlanetPlacementInterpretation(
+          GEMINI_API_KEY, result.formData.name, result.formData.mbti,
+          info.name, sign.name, p.houseIndex + 1, HOUSES[p.houseIndex].meaning,
+          p.dignity ? DIGNITY_LABEL[p.dignity] : null,
+        );
+      } else {
+        const houseIndex = Number(rawKey);
+        const sign = ZODIAC_SIGNS[result.astrologyResult.houseSignIndexes[houseIndex]];
+        const planetsInHouse = result.astrologyResult.planets
+          .filter(p => p.houseIndex === houseIndex)
+          .map(p => `${PLANETS.find(x => x.key === p.key)!.emoji} ${PLANETS.find(x => x.key === p.key)!.name}`);
+        text = await generateHousePlacementInterpretation(
+          GEMINI_API_KEY, result.formData.name, result.formData.mbti,
+          houseIndex + 1, HOUSES[houseIndex].meaning, sign.name, planetsInHouse,
+        );
+      }
+      setAstroPlacementAiData(prev => ({ ...prev, [astroModal.dataKey]: text }));
+      setCachedItem(astroPlacementCacheKey(result.formData, result.formData.birthCity, astroModal.dataKey), text);
+      trackEvent('content_generate', { feature: 'astro_placement', kind });
+      return text;
+    } catch (err: any) {
+      showToast(`별자리 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setAstroPlacementAiLoading(false);
     }
   };
 
@@ -2542,6 +2636,55 @@ export default function App() {
                   disabled={pillarAiLoading}
                 >
                   {pillarAiLoading ? <span>✨ 생성 중...</span> : <span>🔮 나풀이 심층 해설 생성하기</span>}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 모달 (🪐 별자리 행성/하우스 AI 심층 해설) */}
+      {astroModal && (
+        <div className="modal-overlay" onClick={() => setAstroModal(null)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label={astroModal.title} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setAstroModal(null)}>✕</button>
+            <div style={{ marginBottom: 20 }}>
+              <div className="section-title">{astroModal.title}</div>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 16, whiteSpace: 'pre-line' }}>
+              {astroModal.staticDesc}
+            </div>
+            {astroPlacementAiData[astroModal.dataKey] ? (
+              <>
+                <div className="deep-analysis-text" style={{ marginBottom: 16 }}>
+                  {astroPlacementAiData[astroModal.dataKey]}
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    className="btn-gold"
+                    style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
+                    onClick={() => {
+                      addBookmark('별자리 배치 해설', astroModal.title, astroPlacementAiData[astroModal.dataKey]!);
+                      setAstroModal(null);
+                    }}
+                  >
+                    🔖 다이어리에 저장
+                  </button>
+                  <button className="btn-secondary" onClick={() => setAstroModal(null)}>닫기</button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.7 }}>
+                  이 배치가 당신과 MBTI에 어떤 의미인지 나풀이가 심층 해설해드려요.
+                </p>
+                <button
+                  className="btn-primary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={handleGenerateAstroPlacementAi}
+                  disabled={astroPlacementAiLoading}
+                >
+                  {astroPlacementAiLoading ? <span>✨ 생성 중...</span> : <span>🔮 나풀이 심층 해설 생성하기</span>}
                 </button>
               </div>
             )}
@@ -4339,13 +4482,18 @@ export default function App() {
 
               <div className="glass-card animate-slide-up-delay-2">
                 <div className="section-label">🌟 행성 배치</div>
-                <div className="section-title" style={{ marginBottom: 16 }}>7개 행성이 있는 자리</div>
+                <div className="section-title" style={{ marginBottom: 4 }}>7개 행성이 있는 자리</div>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>💡 각 행성을 클릭하면 나풀이의 심층 해설을 볼 수 있어요</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {result.astrologyResult.planets.map(p => {
                     const info = PLANETS.find(x => x.key === p.key)!;
                     const sign = ZODIAC_SIGNS[p.signIndex];
                     return (
-                      <div key={p.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                      <div
+                        key={p.key}
+                        onClick={() => handleAstroPlanetClick(p.key)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                      >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 18 }}>{info.emoji}</span>
                           <span style={{ fontWeight: 700 }}>{info.name}</span>
@@ -4364,10 +4512,15 @@ export default function App() {
 
               <div className="glass-card animate-slide-up-delay-2">
                 <div className="section-label">🏠 하우스 배치 (홀사인)</div>
-                <div className="section-title" style={{ marginBottom: 16 }}>1~12하우스가 있는 별자리</div>
+                <div className="section-title" style={{ marginBottom: 4 }}>1~12하우스가 있는 별자리</div>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>💡 각 하우스를 클릭하면 나풀이의 심층 해설을 볼 수 있어요</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                   {result.astrologyResult.houseSignIndexes.map((signIdx, i) => (
-                    <div key={i} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                    <div
+                      key={i}
+                      onClick={() => handleAstroHouseClick(i)}
+                      style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', cursor: 'pointer' }}
+                    >
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{i + 1}H · {HOUSES[i].meaning}</div>
                       <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{ZODIAC_SIGNS[signIdx].name}</div>
                     </div>
