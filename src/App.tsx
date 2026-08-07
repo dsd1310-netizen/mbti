@@ -33,7 +33,7 @@ import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
-import { recordTodayVisitAndGetStreak, getHighestTier } from './utils/streak';
+import { recordTodayVisitAndGetStreak, getHighestTier, getEarnedTiers, STREAK_TIERS, EarnedTier } from './utils/streak';
 import { trackResultViewAndMaybeRequestReview } from './utils/appReview';
 import { DEPLOY_DOMAIN, DEPLOY_ORIGIN } from './deployConfig';
 import { trackEvent } from './utils/analytics';
@@ -192,6 +192,8 @@ export default function App() {
 
   // 🔥 연속 방문일수(스트릭) — 앱을 열 때마다 한 번만 기록(탭과 무관하게 "오늘 앱을 열었는지" 기준)
   const [streakCount, setStreakCount] = useState(0);
+  // 스트릭이 끊겨도 사라지지 않는 영구 배지 기록 — 다이어리 "내 배지" 섹션에서 사용
+  const [earnedTiers, setEarnedTiers] = useState<EarnedTier[]>([]);
 
   useEffect(() => {
     const savedBm = localStorage.getItem('saju_bookmarks');
@@ -201,6 +203,7 @@ export default function App() {
   useEffect(() => {
     const { count, newTier } = recordTodayVisitAndGetStreak(todayDateStr());
     setStreakCount(count);
+    setEarnedTiers(getEarnedTiers());
     if (newTier) {
       showToast(`${newTier.emoji} ${newTier.days}일 연속 방문 달성! "${newTier.label}" 배지를 획득했어요`);
       trackEvent('streak_milestone', { days: newTier.days, tier: newTier.label });
@@ -1470,6 +1473,7 @@ export default function App() {
     accentDark: string;
     fileName: string;
     shareTitle: string;
+    sparkle?: number; // 0~4, 등급이 있는 카드(스트릭 배지 등)에서 티어가 높을수록 장식을 더 화려하게
   }) => {
     if (!result) return;
     setPersonaImageGenerating(opts.kind);
@@ -1536,6 +1540,33 @@ export default function App() {
         ctx.fillText(opts.emoji, badgeCx, badgeCy + 45);
       }
       ctx.restore();
+
+      // 티어별 화려함 단계(0~4) — 등급이 있는 카드(스트릭 배지 등)에서 티어가 높을수록
+      // 메달리온 주변 링/반짝임을 더해 "성장하는" 느낌을 줌(sparkle 없으면 기존 카드와 동일).
+      if (opts.sparkle && opts.sparkle > 0) {
+        ctx.save();
+        const ringCount = opts.sparkle >= 3 ? 2 : 1;
+        for (let r = 0; r < ringCount; r++) {
+          ctx.strokeStyle = opts.accent;
+          ctx.globalAlpha = 0.5 - r * 0.15;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(badgeCx, badgeCy, badgeR + 20 + r * 18, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        const starCount = opts.sparkle * 3;
+        for (let i = 0; i < starCount; i++) {
+          const angle = (Math.PI * 2 * i) / starCount + Math.PI / 8;
+          const dist = badgeR + 55 + (i % 2 === 0 ? 0 : 20);
+          const sx = badgeCx + Math.cos(angle) * dist;
+          const sy = badgeCy + Math.sin(angle) * dist;
+          ctx.fillStyle = opts.accent;
+          ctx.font = `${14 + (i % 3) * 4}px ${fontStack}`;
+          ctx.globalAlpha = 0.55 + ((i * 37) % 30) / 100; // 반짝임 크기별로 살짝 다른 투명도(고정 시드라 매번 동일하게 재현됨)
+          ctx.fillText('✦', sx, sy);
+        }
+        ctx.restore();
+      }
 
       // 이름 + 부제
       ctx.fillStyle = '#f5c842';
@@ -2941,8 +2972,9 @@ export default function App() {
                             subtitle: `${tier.label} 배지 획득`,
                             badge: '🔥 STREAK',
                             bodyText: `${result.formData.name}님은 ${streakCount}일 연속으로 나풀이를 찾아주셨어요. 꾸준함이 만든 이 기록, 자랑해도 좋아요!`,
-                            accent: '#f5c842',
-                            accentDark: '#92650a',
+                            accent: tier.accent,
+                            accentDark: tier.accentDark,
+                            sparkle: tier.sparkle,
                             fileName: `${result.formData.name}_${streakCount}일연속.png`,
                             shareTitle: '나풀이 연속 방문 기록',
                           })}
@@ -4463,6 +4495,76 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* 🏅 내 배지 — 연속 방문 마일스톤 컬렉션. 스트릭이 끊겨도 한 번 딴 배지는 계속
+                남음(earnedTiers는 streak.ts의 영구 기록에서 옴 — 현재 streakCount와 무관). */}
+            <div className="glass-card" style={{ padding: '18px 20px', marginBottom: 24 }}>
+              <div className="section-label">🏅 내 배지</div>
+              <div className="section-title" style={{ marginBottom: 14, fontSize: 16 }}>
+                연속 방문으로 모으는 컬렉션 ({earnedTiers.length}/{STREAK_TIERS.length})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 12 }}>
+                {STREAK_TIERS.map(tier => {
+                  const earned = earnedTiers.find(e => e.days === tier.days);
+                  return (
+                    <div
+                      key={tier.days}
+                      style={{
+                        padding: '14px 10px',
+                        borderRadius: 14,
+                        textAlign: 'center',
+                        background: earned ? `linear-gradient(135deg, ${tier.accent}22, ${tier.accentDark}22)` : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${earned ? `${tier.accent}55` : 'var(--border)'}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 32, marginBottom: 6, filter: earned ? 'none' : 'grayscale(1)', opacity: earned ? 1 : 0.4 }}>
+                        {earned ? tier.emoji : '🔒'}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: earned ? tier.accent : 'var(--text-secondary)' }}>
+                        {tier.label}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        {tier.days}일 연속
+                      </div>
+                      {earned ? (
+                        <>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>
+                            {earned.earnedAt} 획득
+                          </div>
+                          {result && (
+                            <button
+                              className="btn-secondary"
+                              style={{ marginTop: 8, padding: '4px 8px', fontSize: 10, width: '100%' }}
+                              disabled={personaImageGenerating === 'streak'}
+                              onClick={() => handleDownloadPersonaCard({
+                                kind: 'streak',
+                                kicker: '연속 방문 기록',
+                                emoji: tier.emoji,
+                                name: `${tier.days}일 연속`,
+                                subtitle: `${tier.label} 배지 획득`,
+                                badge: '🔥 STREAK',
+                                bodyText: `${result.formData.name}님은 ${tier.days}일 연속으로 나풀이를 찾아주셨어요. 꾸준함이 만든 이 기록, 자랑해도 좋아요!`,
+                                accent: tier.accent,
+                                accentDark: tier.accentDark,
+                                sparkle: tier.sparkle,
+                                fileName: `${result.formData.name}_${tier.days}일연속.png`,
+                                shareTitle: '나풀이 연속 방문 기록',
+                              })}
+                            >
+                              {personaImageGenerating === 'streak' ? '⏳' : '🖼️ 카드'}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4, opacity: 0.7 }}>
+                          미획득
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {bookmarks.length === 0 ? (
               <div className="bookmark-empty">
