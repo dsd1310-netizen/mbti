@@ -43,7 +43,7 @@ import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECT
 import {
   loadCloudSync,
   MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
-  escapeHtml, escapeHtmlBreaks, wrapCanvasText,
+  escapeHtml, escapeHtmlBreaks, wrapCanvasText, loadCanvasImage,
   fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
   elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
   unseDeepCacheKey, elementSummaryDeepCacheKey, compatSummaryDeepCacheKey, isStaleDeepFallbackText,
@@ -1474,10 +1474,12 @@ export default function App() {
     fileName: string;
     shareTitle: string;
     sparkle?: number; // 0~4, 등급이 있는 카드(스트릭 배지 등)에서 티어가 높을수록 장식을 더 화려하게
+    imageUrl?: string; // 있으면 원형 이모지 메달리온 대신 실제 카드 이미지를 세로 카드 모양으로 그림(오늘의 타로용)
   }) => {
     if (!result) return;
     setPersonaImageGenerating(opts.kind);
     try {
+      const cardImage = opts.imageUrl ? await loadCanvasImage(opts.imageUrl).catch(() => null) : null;
       const W = 1080;
       const H = 1920;
       const canvas = document.createElement('canvas');
@@ -1514,30 +1516,49 @@ export default function App() {
       ctx.font = `700 44px ${fontStack}`;
       ctx.fillText(`${result.formData.name}님`, W / 2, 260);
 
-      // 메달리온
+      // 메달리온 — 실제 카드 이미지가 있으면(오늘의 타로) 원형 배경은 생략(사각 카드와 겹쳐 지저분해짐)
       const badgeCx = W / 2;
       const badgeCy = 460;
       const badgeR = 130;
-      const badgeGrad = ctx.createRadialGradient(badgeCx - 35, badgeCy - 40, 15, badgeCx, badgeCy, badgeR);
-      badgeGrad.addColorStop(0, opts.accent);
-      badgeGrad.addColorStop(0.55, opts.accent);
-      badgeGrad.addColorStop(1, opts.accentDark);
+      if (!cardImage) {
+        const badgeGrad = ctx.createRadialGradient(badgeCx - 35, badgeCy - 40, 15, badgeCx, badgeCy, badgeR);
+        badgeGrad.addColorStop(0, opts.accent);
+        badgeGrad.addColorStop(0.55, opts.accent);
+        badgeGrad.addColorStop(1, opts.accentDark);
+        ctx.save();
+        ctx.shadowColor = opts.accent;
+        ctx.shadowBlur = 55;
+        ctx.fillStyle = badgeGrad;
+        ctx.beginPath();
+        ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       ctx.save();
-      ctx.shadowColor = opts.accent;
-      ctx.shadowBlur = 55;
-      ctx.fillStyle = badgeGrad;
-      ctx.beginPath();
-      ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      ctx.save();
-      ctx.font = `400 120px ${fontStack}`;
-      if (opts.emojiRotated) {
-        ctx.translate(badgeCx, badgeCy + 45);
-        ctx.rotate(Math.PI);
-        ctx.fillText(opts.emoji, 0, 0);
+      if (cardImage) {
+        // 오늘의 타로 — 실제 카드 스캔 이미지를 세로 카드 모양(둥근 모서리)으로 그림
+        const cardW = 230;
+        const cardH = 398; // public/tarot 이미지와 같은 500:866 비율
+        ctx.translate(badgeCx, badgeCy);
+        if (opts.emojiRotated) ctx.rotate(Math.PI);
+        ctx.beginPath();
+        (ctx as any).roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 14);
+        ctx.save();
+        ctx.clip();
+        ctx.drawImage(cardImage, -cardW / 2, -cardH / 2, cardW, cardH);
+        ctx.restore();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = opts.accent;
+        ctx.stroke();
       } else {
-        ctx.fillText(opts.emoji, badgeCx, badgeCy + 45);
+        ctx.font = `400 120px ${fontStack}`;
+        if (opts.emojiRotated) {
+          ctx.translate(badgeCx, badgeCy + 45);
+          ctx.rotate(Math.PI);
+          ctx.fillText(opts.emoji, 0, 0);
+        } else {
+          ctx.fillText(opts.emoji, badgeCx, badgeCy + 45);
+        }
       }
       ctx.restore();
 
@@ -3211,6 +3232,7 @@ export default function App() {
                             bodyText: tarotData,
                             accent,
                             accentDark,
+                            imageUrl: `/tarot/${card.id}.webp`,
                             fileName: `${result.formData.name}_오늘의타로.png`,
                             shareTitle: '나풀이 오늘의 타로',
                           });
@@ -3232,13 +3254,12 @@ export default function App() {
                       className="persona-card"
                       style={{ marginBottom: 14, '--accent': accent, '--accent-dark': accentDark, '--accent-glow': glow, '--accent-text': accent } as React.CSSProperties}
                     >
-                      <div className="persona-card-medallion">
-                        <span
-                          className="persona-card-emoji"
-                          style={{ display: 'inline-block', transform: reversed ? 'rotate(180deg)' : undefined, transition: 'transform 0.3s' }}
-                        >
-                          {card.emoji}
-                        </span>
+                      <div className="persona-card-image">
+                        <img
+                          src={`/tarot/${card.id}.webp`}
+                          alt={`${card.name}(${card.nameEn})`}
+                          style={{ transform: reversed ? 'rotate(180deg)' : undefined }}
+                        />
                       </div>
                       <div className="persona-card-name">{card.name}</div>
                       <div className="persona-card-divider" />

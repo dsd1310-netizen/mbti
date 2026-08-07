@@ -395,6 +395,27 @@ body {
   line-height: 1;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
 }
+/* [2026-08-07] 오늘의 타로 전용 — 이모지 원형 배지 대신 실제 카드 스캔 이미지(퍼블릭 도메인
+   1909 라이더-웨이트 덱, public/tarot/{id}.webp)를 세로 카드 비율 그대로 보여줌. */
+.persona-card-image {
+  position: relative;
+  width: 132px;
+  height: 228px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 10px 28px -6px var(--accent-glow, rgba(139, 92, 246, 0.55)),
+    0 0 0 4px rgba(255, 255, 255, 0.03);
+  z-index: 1;
+}
+.persona-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s;
+}
 .persona-card-name {
   position: relative;
   font-family: "Noto Serif KR", serif;

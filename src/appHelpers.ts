@@ -113,6 +113,17 @@ export function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxW
   return lines;
 }
 
+// 공유 카드(handleDownloadPersonaCard)에서 오늘의 타로 이미지를 canvas에 그리기 전 로드용.
+// 실패해도(파일 누락 등) 호출부가 .catch(() => null)로 받아 기존 이모지 방식으로 조용히 대체.
+export function loadCanvasImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`이미지 로드 실패: ${src}`));
+    img.src = src;
+  });
+}
+
 // birthBranch/hourUnknown을 반드시 포함해야 함 — 시간에 따라 elementCounts/sipsin(십신)이 달라져,
 // 이름+생년월일만으로 키를 구성하면 시간만 바꿔 재제출했을 때 이전 시간 기준 캐시가 잘못 재사용됨.
 export type CacheKeyBase = { name: string; birthYear: string; birthMonth: string; birthDay: string; birthBranch: string; hourUnknown: boolean };
