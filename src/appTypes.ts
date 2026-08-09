@@ -4,7 +4,7 @@
  */
 import { HOUR_BRANCHES, SajuResult } from './utils/sajuCalculator';
 import { SajuIntro } from './utils/geminiApi';
-import { AstrologyResult } from './utils/astrologyCalculator';
+import { AstrologyResult } from './utils/astrologyData';
 
 export interface FormData {
   name: string;

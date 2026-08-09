@@ -2,7 +2,7 @@
  * 서양 고전점성술(홀사인 하우스 시스템) 종합 해설·심화해석, 오늘의 트랜짓, 오늘의 타로.
  */
 
-import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey, TransitAspect } from '../astrologyCalculator';
+import { AstrologyResult, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, PlanetKey, TransitAspect } from '../astrologyData';
 import { TarotCard } from '../../data/tarotCards';
 import { DEEP_MODELS, cleanField, callGeminiJsonApi, callGeminiPlainApi } from './core';
 

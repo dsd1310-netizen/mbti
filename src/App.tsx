@@ -29,7 +29,10 @@ import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
-import { calculateAstrology, calculateTodayTransits, KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult, PlanetKey } from './utils/astrologyCalculator';
+// calculateAstrology/calculateTodayTransits(astronomy-engine 의존, 번들 119KB)는 정적 import하지 않고
+// 실제로 필요한 시점(폼 제출/트랜짓 갱신)에 동적 import로 불러온다 — 초기 로딩 경로에서 제외하기 위함
+// (계획안.md 7-AS 참고). 나머지는 순수 데이터/타입이라 초기 화면(도시 선택 등)에도 안전하게 정적 import.
+import { KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult, PlanetKey } from './utils/astrologyData';
 import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
 import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
@@ -952,6 +955,7 @@ export default function App() {
     setTransitLoading(true);
     setTransitFailed(false);
     try {
+      const { calculateTodayTransits } = await import('./utils/astrologyCalculator');
       const transits = calculateTodayTransits(result.astrologyResult);
       const data = await generateTransitInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult, transits);
       setTransitData(data);
@@ -2439,6 +2443,7 @@ export default function App() {
           astrologyTimeConfidence = 'approximate';
         }
         const city = KOREAN_CITIES.find(c => c.name === formData.birthCity) ?? KOREAN_CITIES[0];
+        const { calculateAstrology } = await import('./utils/astrologyCalculator');
         astrologyResult = calculateAstrology(year, month, day, astroHour, astroMinute, city.lat, city.lon, astrologyTimeConfidence);
       } catch (err) {
         clearInterval(msgInterval);
