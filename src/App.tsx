@@ -233,34 +233,54 @@ export default function App() {
   }, []);
 
   // 클라우드 동기화(선택 기능): 로그인 상태 구독 + 로그인 시 로컬↔클라우드 다이어리 기록 병합
+  // Firebase Auth+Firestore 청크(~660KB)는 절대 다수인 비로그인 사용자에게도 매번 즉시
+  // 받아지고 있었음(모바일 저속망에서 첫 화면 표시와 대역폭을 다투는 원인) — window의
+  // load 이벤트(핵심 리소스 로드 완료) 이후로 미뤄서 초기 로딩 경로에서 완전히 빼냄.
+  // main.tsx의 서비스워커 등록도 동일한 패턴(load 이후 등록)을 이미 쓰고 있음.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    loadCloudSync().then(mod => {
-      setCloudSyncAvailable(mod.cloudSyncAvailable);
-      unsubscribe = mod.subscribeToAuthState(async (user) => {
-        setCurrentUser(user);
-        if (!user) return;
-        setCloudSyncLoading(true);
-        try {
-          const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
-          // 로컬 기록은 클라우드 fetch가 끝난 "직후"(가능한 한 병합 직전)에 다시 읽는다 —
-          // fetch를 기다리는 동안 addBookmark/removeBookmark가 로컬에 새로 반영한 변경을
-          // 오래된 스냅샷으로 덮어써버리는 경합을 줄이기 위함.
-          const localRaw = localStorage.getItem('saju_bookmarks');
-          const local: Bookmark[] = localRaw ? JSON.parse(localRaw) : [];
-          const merged = mod.mergeBookmarks(local, cloud);
-          setBookmarks(merged);
-          localStorage.setItem('saju_bookmarks', JSON.stringify(merged));
-          await mod.pushBookmarksToCloud(user.uid, merged);
-        } catch (err) {
-          console.warn('클라우드 동기화 실패:', err);
-          showToast('클라우드 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-        } finally {
-          setCloudSyncLoading(false);
-        }
+    let cancelled = false;
+
+    const start = () => {
+      loadCloudSync().then(mod => {
+        if (cancelled) return;
+        setCloudSyncAvailable(mod.cloudSyncAvailable);
+        unsubscribe = mod.subscribeToAuthState(async (user) => {
+          setCurrentUser(user);
+          if (!user) return;
+          setCloudSyncLoading(true);
+          try {
+            const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
+            // 로컬 기록은 클라우드 fetch가 끝난 "직후"(가능한 한 병합 직전)에 다시 읽는다 —
+            // fetch를 기다리는 동안 addBookmark/removeBookmark가 로컬에 새로 반영한 변경을
+            // 오래된 스냅샷으로 덮어써버리는 경합을 줄이기 위함.
+            const localRaw = localStorage.getItem('saju_bookmarks');
+            const local: Bookmark[] = localRaw ? JSON.parse(localRaw) : [];
+            const merged = mod.mergeBookmarks(local, cloud);
+            setBookmarks(merged);
+            localStorage.setItem('saju_bookmarks', JSON.stringify(merged));
+            await mod.pushBookmarksToCloud(user.uid, merged);
+          } catch (err) {
+            console.warn('클라우드 동기화 실패:', err);
+            showToast('클라우드 동기화에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+          } finally {
+            setCloudSyncLoading(false);
+          }
+        });
       });
-    });
-    return () => { if (unsubscribe) unsubscribe(); };
+    };
+
+    if (document.readyState === 'complete') {
+      start();
+    } else {
+      window.addEventListener('load', start, { once: true });
+    }
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('load', start);
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleToggleNotifications = async () => {
