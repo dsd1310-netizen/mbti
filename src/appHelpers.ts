@@ -17,6 +17,16 @@ export function loadCloudSync() {
   return cloudSyncModulePromise;
 }
 
+// 동적 import(코드 스플리팅된 청크) 실패를 계산 오류와 구분하기 위한 판별 함수 — 지하철 등
+// 네트워크가 순간적으로 끊기거나, 탭을 오래 열어둔 사이 새 배포가 나가 브라우저가 기억하는
+// 청크 해시가 서버에서 사라졌을 때 이 형태의 에러 메시지가 뜬다(브라우저마다 문구는 조금씩
+// 다르지만 공통적으로 "fetch"/"dynamically imported module"/"module script" 키워드를 포함).
+// 계획안.md 7-AU 참고 — main.tsx의 vite:preloadError 자동 새로고침과 짝을 이루는 방어 로직.
+export function isChunkLoadError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /dynamically imported module|Failed to fetch|Importing a module script failed|Load failed/i.test(msg);
+}
+
 export const MBTI_LIST = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
 
 export const ELEMENT_LABELS: Record<string, { ko: string; emoji: string; cls: string }> = {

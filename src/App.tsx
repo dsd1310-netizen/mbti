@@ -45,7 +45,7 @@ import type { User } from 'firebase/auth';
 import { NapuliMark } from './components/NapuliMark';
 import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY, GUIDE_LAST_SHOWN_KEY, GUIDE_DAILY_ENABLED_KEY, GUIDE_FEATURES } from './appTypes';
 import {
-  loadCloudSync,
+  loadCloudSync, isChunkLoadError,
   MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
   escapeHtml, escapeHtmlBreaks, wrapCanvasText, loadCanvasImage,
   fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
@@ -991,7 +991,9 @@ export default function App() {
       trackEvent('content_generate', { feature: 'transit' });
       return data;
     } catch (err: any) {
-      showToast(`오늘의 트랜짓 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      showToast(isChunkLoadError(err)
+        ? '네트워크 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.'
+        : `오늘의 트랜짓 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
       setTransitFailed(true);
       return null;
     } finally {
@@ -1830,6 +1832,18 @@ export default function App() {
   const handleDownloadPDF = async () => {
     if (!result) return;
     setPdfModalOpen(false);
+
+    // 클릭 이벤트와 동기적으로(비동기 대기 없이) 곧바로 호출해야 브라우저가 "사용자가 직접 연"
+    // 창으로 인식해 팝업 차단을 하지 않는다 — 아래 AI 콘텐츠 생성처럼 시간이 걸리는 비동기
+    // 작업이 먼저 끝난 뒤에 호출하면(예전 코드가 그랬음) 모바일 브라우저, 특히 iOS Safari에서
+    // 사실상 항상 팝업이 막히거나 빈 창만 뜬다(계획안.md 7-AU 참고). 창 자체는 여기서 미리
+    // 열어두고, 실제 내용은 기존과 동일하게 아래에서 다 만든 뒤 마지막에 써 넣는다.
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast('팝업 차단이 설정되어 있습니다. 팝업을 허용해 주세요.');
+      return;
+    }
+
     setPdfGenerating(true);
     try {
       // 체크 해제한 섹션은 아예 생성 자체를 건너뛰어(API 호출 없음) 시간을 절약함 —
@@ -1911,12 +1925,6 @@ export default function App() {
             }
           }
         }
-      }
-
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        showToast('팝업 차단이 설정되어 있습니다. 팝업을 허용해 주세요.');
-        return;
       }
 
       const saju = result.sajuResult;
@@ -2301,6 +2309,9 @@ export default function App() {
       trackEvent('download', { content: 'pdf' });
     } catch (err: any) {
       showToast(`PDF 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      // printWindow를 팝업 차단 회피를 위해 미리 열어뒀으므로(위 참고), 생성 도중 실패하면
+      // 빈 채로 방치하지 않고 닫아준다 — 사용자에게 내용 없는 빈 탭만 남는 것을 방지.
+      try { printWindow.close(); } catch {}
     } finally {
       setPdfGenerating(false);
     }
@@ -2474,7 +2485,14 @@ export default function App() {
         astrologyResult = calculateAstrology(year, month, day, astroHour, astroMinute, city.lat, city.lon, astrologyTimeConfidence);
       } catch (err) {
         clearInterval(msgInterval);
-        showToast('생년월일 입력값이 올바르지 않습니다. 날짜를 다시 확인해 주세요.');
+        // 별자리 계산 모듈은 코드 스플리팅으로 필요할 때 따로 받아오는데(계획안.md 7-AS/7-AU
+        // 참고), 이 fetch가 네트워크 문제나 새 배포로 실패하는 경우와 실제 생년월일 값 문제를
+        // 구분해서 안내 — 전자를 "날짜가 틀렸다"고 잘못 알리면 사용자가 애먼 입력값을 의심하게 됨.
+        if (isChunkLoadError(err)) {
+          showToast('네트워크 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.');
+        } else {
+          showToast('생년월일 입력값이 올바르지 않습니다. 날짜를 다시 확인해 주세요.');
+        }
         setStep('input');
         return;
       }

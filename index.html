@@ -38,9 +38,23 @@
     <!-- 카카오톡 공유 SDK는 여기서 미리 로드하지 않음 — async/defer 없는 <script>는 HTML 파싱을
          차단해 모바일 저속 네트워크에서 첫 화면 표시를 수 초씩 늦춤. 실제로 "카톡 공유" 버튼을
          누를 때만 App.tsx의 handleKakaoShare()가 동적으로 script 태그를 주입해 로드한다. -->
+    <!-- 지하철 등에서 네트워크가 끊겨 App.css(해시 붙은 외부 파일)조차 못 받아온 경우에도
+         아래 #root 대체 콘텐츠가 최소한 읽히도록, 배경/글자색만 별도로 미리 인라인 지정
+         (계획안.md 7-AU 참고). -->
+    <style>body { background: #050510; color: #f0eeff; margin: 0; }</style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- React가 정상적으로 마운트되면 즉시 이 내용으로 덮어써진다. 스크립트/청크 로딩이
+           네트워크 문제로 실패해 React가 끝내 못 뜨는 경우, 사용자가 완전히 새까만 빈 화면
+           대신 최소한 "새로고침해 달라"는 안내는 보게 하기 위한 정적 대체 콘텐츠. -->
+      <div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; padding:24px; font-family:'Noto Sans KR', sans-serif;">
+        <div style="font-size:40px;">🔮</div>
+        <p style="font-size:14px; color:#94a3b8; max-width:320px; line-height:1.6; margin:0;">
+          나풀이를 불러오는 중이에요. 화면이 계속 이 상태라면 네트워크 연결을 확인하고 새로고침해 주세요.
+        </p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

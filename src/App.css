@@ -254,8 +254,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 44px; /* 애플 HIG 최소 터치 영역(44x44pt) 권장치 준수 — 기존 34px는 미달이었음 */
+  height: 44px;
   border-radius: 10px;
   background: rgba(20, 20, 50, 0.8);
   border: 1px solid rgba(120, 100, 255, 0.25);
@@ -642,7 +642,9 @@ body {
   border-radius: 14px;
   padding: 13px 16px;
   color: var(--text-primary);
-  font-size: 14px;
+  /* 16px 미만이면 iOS Safari가 포커스 시 페이지 전체를 자동 확대함(계획안.md 7-AU 참고) —
+     모바일 입력창 전부가 이 클래스를 쓰므로 여기 하나만 올리면 전체 해결됨. */
+  font-size: 16px;
   font-family: inherit;
   transition: all 0.2s;
   outline: none;
@@ -662,7 +664,7 @@ body {
   border-radius: 14px;
   padding: 13px 16px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 16px; /* iOS Safari 자동 확대 방지 — .form-input과 동일한 이유(계획안.md 7-AU) */
   font-family: inherit;
   transition: all 0.2s;
   outline: none;

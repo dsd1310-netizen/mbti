@@ -38,6 +38,10 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           return res;
         })
+        // 네트워크가 끊겨 fetch 자체가 reject되면(지하철 등) 캐시를 한 번 더 확인 —
+        // 처리 안 된 rejection으로 남기지 않고, 그래도 없으면 정상적인 네트워크 실패로 넘김
+        // (main.tsx의 vite:preloadError 자동 새로고침이 이어서 복구를 시도함).
+        .catch(() => caches.match(request))
       )
     );
     return;

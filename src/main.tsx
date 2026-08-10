@@ -20,6 +20,21 @@ if (devKeyParam) {
   window.history.replaceState({}, '', url.toString());
 }
 
+// 청크 로딩 실패(동적 import 실패) 자동 복구 — 이 앱은 App.tsx에서 별자리 계산 등을
+// import()로 나눠 불러오는데(계획안.md 7-AS 참고), 아래 두 상황에서 그 fetch가 실패할 수 있음:
+//   1) 지하철 등 네트워크가 순간적으로 끊긴 경우
+//   2) 사용자가 탭을 오래 열어둔 사이 새 버전이 배포돼, 브라우저가 기억하는 파일 해시가
+//      더 이상 서버에 없는 경우(가장 흔함 — 배포가 잦은 이 프로젝트에서 특히 자주 발생)
+// 두 경우 다 화면이 "로딩 중간에 멈추거나 새까맣게" 보일 수 있어(계획안.md 7-AU 참고),
+// Vite가 이럴 때 쏘는 vite:preloadError 이벤트를 받아 한 번만 자동 새로고침한다
+// (세션당 1회로 제한해 정말 네트워크가 끊긴 상태에서 새로고침이 무한 반복되는 것을 방지).
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  if (sessionStorage.getItem('napuli_reloaded_after_chunk_error')) return;
+  sessionStorage.setItem('napuli_reloaded_after_chunk_error', 'true');
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
