@@ -43,7 +43,7 @@ import { DEPLOY_DOMAIN, DEPLOY_ORIGIN } from './deployConfig';
 import { trackEvent } from './utils/analytics';
 import type { User } from 'firebase/auth';
 import { NapuliMark } from './components/NapuliMark';
-import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY } from './appTypes';
+import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY, GUIDE_LAST_SHOWN_KEY, GUIDE_DAILY_ENABLED_KEY, GUIDE_FEATURES } from './appTypes';
 import {
   loadCloudSync,
   MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
@@ -219,6 +219,33 @@ export default function App() {
       trackEvent('streak_milestone', { days: newTier.days, tier: newTier.label });
     }
   }, []);
+
+  // 💡 기능 가이드 팝업 — 온보딩(최초 1회, ONBOARDING_SEEN_KEY)과 별개로 하루에 한 번만
+  // 자동으로 뜨는 기능 소개. 오늘 이미 떴으면(GUIDE_LAST_SHOWN_KEY===오늘) 다시 안 띄우고,
+  // 팝업 안의 토글로 꺼두면(GUIDE_DAILY_ENABLED_KEY==='false') 자동으로는 아예 안 뜬다 —
+  // 헤더의 "가이드" 버튼으로 언제든 수동으로 다시 볼 수 있음(handleOpenGuide).
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  const [guideDailyEnabled, setGuideDailyEnabled] = useState(() => localStorage.getItem(GUIDE_DAILY_ENABLED_KEY) !== 'false');
+
+  useEffect(() => {
+    if (localStorage.getItem(GUIDE_DAILY_ENABLED_KEY) === 'false') return;
+    const today = todayDateStr();
+    if (localStorage.getItem(GUIDE_LAST_SHOWN_KEY) === today) return;
+    localStorage.setItem(GUIDE_LAST_SHOWN_KEY, today);
+    setGuideModalOpen(true);
+  }, []);
+
+  const handleOpenGuide = () => {
+    setGuideDailyEnabled(localStorage.getItem(GUIDE_DAILY_ENABLED_KEY) !== 'false');
+    setGuideModalOpen(true);
+    trackEvent('guide_opened');
+  };
+
+  const handleToggleGuideDaily = () => {
+    const next = !guideDailyEnabled;
+    setGuideDailyEnabled(next);
+    localStorage.setItem(GUIDE_DAILY_ENABLED_KEY, next ? 'true' : 'false');
+  };
 
   // 💑 궁합 초대 링크(?invite=...)로 들어왔는지 확인. 있으면 상태에 저장하고 URL에서는 바로
   // 제거(주소창/방문 기록에 남지 않게, main.tsx의 devkey 처리와 동일한 패턴).
@@ -2560,6 +2587,7 @@ export default function App() {
             <span className="logo-badge">사주 × MBTI 정밀 만세력 엔진</span>
           </div>
           <div className="header-actions">
+            <button className="btn-guide-header" aria-label="기능 가이드" onClick={handleOpenGuide}>💡</button>
             <button className="btn-bookmark-header" onClick={() => setStep('bookmarks')}>
               📔 다이어리 ({bookmarks.length})
             </button>
@@ -2569,6 +2597,47 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* 모달 (💡 기능 가이드 — 하루 한 번 자동 표시 + 헤더 버튼으로 언제든 수동 재열람) */}
+      {guideModalOpen && (
+        <div className="modal-overlay" onClick={() => setGuideModalOpen(false)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label="나풀이 기능 가이드" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setGuideModalOpen(false)}>✕</button>
+            <div style={{ marginBottom: 20 }}>
+              <div className="section-label">💡 나풀이 둘러보기</div>
+              <div className="section-title">이런 기능들이 있어요</div>
+            </div>
+
+            <div className="guide-toggle-row">
+              <span className="guide-toggle-label">🔔 하루에 한 번 자동으로 보기</span>
+              <button
+                type="button"
+                className={`guide-switch ${guideDailyEnabled ? 'on' : ''}`}
+                role="switch"
+                aria-checked={guideDailyEnabled}
+                aria-label="가이드 하루 한 번 자동 표시"
+                onClick={handleToggleGuideDaily}
+              >
+                <span className="guide-switch-knob" />
+              </button>
+            </div>
+
+            {GUIDE_FEATURES.map(f => (
+              <div key={f.title} className="guide-feature-card">
+                <img src={f.image} alt={f.title} loading="lazy" />
+                <div className="guide-feature-body">
+                  <div className="guide-feature-title">{f.emoji} {f.title}</div>
+                  <div className="guide-feature-desc">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+
+            <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setGuideModalOpen(false)}>
+              확인했어요
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 토스트 */}
       {toastMsg && <div className="toast" role="status" aria-live="polite">✨ {toastMsg}</div>}

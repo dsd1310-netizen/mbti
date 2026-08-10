@@ -41,6 +41,53 @@ export type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
 export const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
 export type PillarKey = 'year' | 'month' | 'day' | 'hour';
 
+// 💡 기능 가이드 팝업 — 온보딩(최초 1회)과 별개로, 하루 한 번 자동으로 뜨는 기능 소개 팝업.
+// GUIDE_LAST_SHOWN_KEY: 마지막으로 "자동으로" 뜬 날짜(YYYY-MM-DD) — 오늘 이미 떴으면 다시 안 띄움.
+// GUIDE_DAILY_ENABLED_KEY: 팝업 안의 토글로 끄면 'false' 저장, 이후 자동으로는 안 뜸(헤더의
+// 가이드 버튼으로 언제든 수동으로 다시 볼 수 있고, 그 안에서 토글을 다시 켤 수도 있음).
+export const GUIDE_LAST_SHOWN_KEY = 'napuli_guide_last_shown';
+export const GUIDE_DAILY_ENABLED_KEY = 'napuli_guide_daily_enabled';
+
+export interface GuideFeature {
+  image: string;
+  emoji: string;
+  title: string;
+  desc: string;
+}
+
+export const GUIDE_FEATURES: GuideFeature[] = [
+  {
+    image: '/guide/saju-mbti.webp',
+    emoji: '🔮',
+    title: '사주 × MBTI 융합 해석',
+    desc: '절기 기준 정밀 만세력으로 산출한 사주원국을 나풀이가 MBTI와 엮어 성격 · 커리어 · 연애 · 재물까지 심층 분석해드려요.',
+  },
+  {
+    image: '/guide/astrology.webp',
+    emoji: '🪐',
+    title: '서양 점성술 · 타로',
+    desc: '어센던트 · 행성 · 하우스까지 정밀하게 계산하는 홀사인 점성술과, 매일 새로운 78장 타로 카드로 오늘의 기운도 확인해보세요.',
+  },
+  {
+    image: '/guide/compat.webp',
+    emoji: '💑',
+    title: '궁합 보기',
+    desc: '나와 상대방의 사주를 비교해 궁합을 확인해보세요. 일지 기준 합 · 충 · 형 · 파 · 해 조합표와 나풀이의 AI 종합 해설까지 제공돼요.',
+  },
+  {
+    image: '/guide/diary.webp',
+    emoji: '📔',
+    title: '다이어리에 저장',
+    desc: '마음에 드는 해석은 다이어리에 저장해두고 언제든 다시 볼 수 있어요. 로그인하면 기기를 바꿔도 기록이 그대로 유지돼요.',
+  },
+  {
+    image: '/guide/share.webp',
+    emoji: '📤',
+    title: 'PDF · 카톡 공유',
+    desc: '결과를 PDF로 저장하거나 카카오톡으로 공유하고, 예쁜 이미지 카드로 만들어 친구에게 자랑해보세요.',
+  },
+];
+
 // PDF 저장 시 섹션 선택 — 12개 개별 항목 대신 8개 큰 단위로 묶음(계획안.md 논의 결과)
 export type PdfSectionKey = 'aiCategories' | 'prescriptions' | 'elementSummary' | 'compat' | 'fengshui' | 'fortune' | 'pillars' | 'astrology';
 export const PDF_SECTION_META: Record<PdfSectionKey, { label: string; desc: string }> = {

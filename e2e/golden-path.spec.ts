@@ -16,6 +16,19 @@ function skipOnboarding(page: Page) {
   });
 }
 
+// 💡 기능 가이드 팝업(계획안.md 7-AT)은 온보딩과 무관하게 하루 한 번 자동으로 뜨는데,
+// 골든플로우 테스트의 첫 클릭(시작하기/제출 버튼)을 모달 오버레이가 가로채 실패시킨다.
+// 오늘 이미 본 것으로 미리 표시해 테스트에서는 항상 자동 표시를 건너뛴다.
+function skipGuidePopup(page: Page) {
+  return page.addInitScript(() => {
+    // appHelpers.ts의 todayDateStr()과 동일하게 로컬 날짜 기준(UTC 아님)으로 맞춰야
+    // 자정 근처 타임존 오차로 오탐(스킵 실패)하지 않는다.
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('napuli_guide_last_shown', today);
+  });
+}
+
 const consoleErrors: string[] = [];
 function watchForErrors(page: Page) {
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
@@ -26,6 +39,7 @@ function watchForErrors(page: Page) {
 
 test('온보딩 → 입력 → 제출 → 결과 화면까지 도달한다', async ({ page }) => {
   watchForErrors(page);
+  await skipGuidePopup(page);
   await page.goto('/');
 
   // 온보딩 화면(최초 1회) — "시작하기" 클릭 시 입력 폼으로 전환
@@ -48,6 +62,7 @@ test('온보딩 → 입력 → 제출 → 결과 화면까지 도달한다', asy
 test('2월 30일처럼 존재하지 않는 날짜는 제출을 막는다', async ({ page }) => {
   watchForErrors(page);
   await skipOnboarding(page);
+  await skipGuidePopup(page);
   await page.goto('/');
 
   await page.getByPlaceholder('예: 홍길동').fill('테스트유저');
@@ -63,6 +78,7 @@ test('2월 30일처럼 존재하지 않는 날짜는 제출을 막는다', async
 test('"태어난 시간을 모릅니다" 체크 시 사주원국이 3기둥만 표시된다', async ({ page }) => {
   watchForErrors(page);
   await skipOnboarding(page);
+  await skipGuidePopup(page);
   await page.goto('/');
 
   await page.getByPlaceholder('예: 홍길동').fill('테스트유저');
@@ -76,6 +92,7 @@ test('"태어난 시간을 모릅니다" 체크 시 사주원국이 3기둥만 �
 test('결과 화면의 대분류/서브 탭을 전환해도 콘솔 에러 없이 정상 렌더링된다', async ({ page }) => {
   watchForErrors(page);
   await skipOnboarding(page);
+  await skipGuidePopup(page);
   await page.goto('/');
 
   await page.getByPlaceholder('예: 홍길동').fill('테스트유저');
