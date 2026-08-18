@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // 다이어리 동기화(bookmarks/updatedAt)는 기존처럼 로그인한 본인이 자유롭게 읽고 쓸 수 있다.
+    // credits/freeTrialGranted는 심화해석 크레딧 잔액 — 서버(api/*.ts, Firebase Admin SDK)만
+    // 갱신해야 하므로 클라이언트 쓰기에서 명시적으로 제외한다(Admin SDK는 이 규칙 자체를
+    // 우회하는 관리자 권한이라 서버 쪽 크레딧 차감/지급은 계속 정상 동작함).
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && !request.resource.data.keys().hasAny(['credits', 'freeTrialGranted']);
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits', 'freeTrialGranted']);
+      allow delete: if isOwner(userId);
+    }
+
+    // rateLimits(api/_rateLimit.ts)/processedWebhookEvents(api/_credits.ts 등)는 Admin SDK
+    // 전용 컬렉션 — 여기 명시적으로 규칙을 안 열어주면 Firestore가 기본적으로 클라이언트
+    // 접근을 전부 거부하므로 별도 규칙 불필요(위 users/{userId}처럼 명시적으로 허용해야만
+    // 클라이언트가 접근 가능).
+  }
+}

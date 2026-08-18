@@ -18,6 +18,25 @@ export const STEM_RELATION_LABEL: Record<StemRelationType, string> = {
   'neutral': '직접적인 상생상극 관계 없음',
 };
 
+/**
+ * 귀인지도용 게임화 라벨 — 위 STEM_RELATION_LABEL(학술적 설명)과 같은 6가지 분류를
+ * 사주도령 "귀인지도"류 UX처럼 한눈에 와닿는 이름·이모지·색으로 재포장한 것.
+ * 오행 이론 자체(상생상극 판정 로직)는 그대로, 표현만 게임처럼 바꿈.
+ */
+export interface GwiinTypeMeta {
+  label: string;
+  emoji: string;
+  color: string;
+}
+export const GWIIN_TYPE_META: Record<StemRelationType, GwiinTypeMeta> = {
+  'b-generates-a': { label: '귀인', emoji: '🌟', color: '#f5c842' },
+  'a-generates-b': { label: '내 편', emoji: '🌱', color: '#34d399' },
+  'a-controls-b': { label: '라이벌', emoji: '⚡', color: '#8b5cf6' },
+  'b-controls-a': { label: '자극제', emoji: '🔥', color: '#fb923c' },
+  'same': { label: '동료', emoji: '🤝', color: '#60a5fa' },
+  'neutral': { label: '무난한 사이', emoji: '◯', color: '#9ca3af' },
+};
+
 export interface PairCompatibilityResult {
   dayBranchRelations: BranchRelationType[]; // 동시에 여러 관계가 성립할 수 있음(드묾)
   dayStemRelation: StemRelationType;

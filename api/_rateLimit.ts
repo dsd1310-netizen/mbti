@@ -4,31 +4,11 @@
  * 우회하는 관리자 권한이라, 아무나 자기 카운트를 조작할 수 없다.
  * 파일명이 `_`로 시작해 Vercel이 이 파일 자체를 별도 엔드포인트로 노출하지 않는다.
  */
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from './_firebaseAdmin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { createHash } from 'crypto';
 
 const DAILY_LIMIT = 250;
-
-// [2026-08-06] 이 함수 내부(JSON.parse/cert/initializeApp)가 예전엔 try/catch 없이 호출되어,
-// FIREBASE_SERVICE_ACCOUNT_KEY 환경변수가 설정되어 있지만 값이 조금이라도 잘못되어 있으면
-// (Vercel 환경변수에 JSON을 붙여넣을 때 흔한 개행/따옴표 이스케이프 문제 등) 예외가 그대로
-// 던져져 api/gemini.ts 핸들러 전체가 처리 안 된 예외로 죽어(Vercel이 FUNCTION_INVOCATION_FAILED
-// 플레인 텍스트 페이지를 반환) AI 기능 전체가 매번 실패하는 원인이었을 가능성이 높음 — 아래에서
-// try/catch로 감싸 "키 미설정"과 마찬가지로 fail-open(rate limit 없이 통과) 처리하도록 수정.
-function getAdminDb() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (!raw) return null; // 서비스 계정 키 미설정 시 rate limit 없이 통과(fail-open) — 서비스 중단보다 낫다.
-  try {
-    const app = getApps().length ? getApps()[0] : initializeApp({ credential: cert(JSON.parse(raw)) });
-    // 이 프로젝트의 Firestore 데이터베이스 ID가 (신형 Enterprise 에디션이라) 관용적인
-    // "(default)" 센티널이 아니라 문자 그대로 "default"로 되어 있어, 명시적으로 지정해야 한다.
-    return getFirestore(app, 'default');
-  } catch (err) {
-    console.error('[rateLimit] Firebase Admin 초기화 실패 — FIREBASE_SERVICE_ACCOUNT_KEY 값을 확인하세요:', err);
-    return null;
-  }
-}
 
 function hashIp(ip: string): string {
   return createHash('sha256').update(ip).digest('hex').slice(0, 32);

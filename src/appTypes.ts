@@ -39,6 +39,8 @@ export interface Bookmark {
 export type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
 
 export const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
+// 결과 화면 최초 진입 시 1회만 보여주는 "어디부터 볼지" 안내 배너 — 온보딩 진입점 과다 문제(계획안.md 참고) 완화용.
+export const RESULT_HINT_SEEN_KEY = 'napuli_result_hint_seen';
 export type PillarKey = 'year' | 'month' | 'day' | 'hour';
 
 // 💡 기능 가이드 팝업 — 온보딩(최초 1회)과 별개로, 하루 한 번 자동으로 뜨는 기능 소개 팝업.

@@ -459,6 +459,67 @@ function calcElementCounts(pillars: Pillar[]): ElementCounts {
 }
 
 /**
+ * 한국 민간 표준시(civil clock)가 KST(UTC+9)와 달랐던 두 종류의 이력 — 절기 데이터(KST 기준)와
+ * 비교하기 전에, 출생 당시 실제 시계가 몇 분 차이 났는지를 보정해야 진짜 출생 순간과 맞는다.
+ *
+ * 1) 1954-03-21~1961-08-09: 광복 이후 이승만 정부가 독자 표준자오선(동경 127.5도)을 채택해
+ *    UTC+8:30을 쓴 기간(1961-08-10 박정희 정부가 동경 135도=UTC+9로 환원). 대통령령 제876호 등
+ *    관보 원문 근거로 확인(웹 검색, 2026-08-18).
+ * 2) 서머타임(하절기 표준시) — 그 시점의 기준 오프셋에 +1시간. 1948~1951/1955~1960/1987~1988년
+ *    시행. 1987~1988년은 astrologyData.ts의 KNOWN_DST_PERIODS와 동일 기간(그쪽은 이미 검증됨).
+ *    1948~1951/1955~1960년 날짜는 나무위키 "서머타임" 문서의 연도별 시행표 기준(2026-08-18 확인) —
+ *    관보 원문까지 대조하진 못해 위 표준자오선 변경일보다는 확신도가 한 단계 낮음.
+ *    1955~1960년은 위 UTC+8:30 기간과 겹쳐, 그 여름 동안은 실제로 UTC+9:30이었다(8:30+1시간).
+ */
+export function isInHistoricalUTC830Period(year: number, month: number, day: number): boolean {
+  const t = new Date(year, month - 1, day).getTime();
+  return t >= new Date(1954, 2, 21).getTime() && t <= new Date(1961, 7, 9).getTime();
+}
+
+const HISTORICAL_DST_PERIODS: ReadonlyArray<{ start: [number, number, number]; end: [number, number, number] }> = [
+  { start: [1948, 6, 1], end: [1948, 9, 13] },
+  { start: [1949, 4, 3], end: [1949, 9, 11] },
+  { start: [1950, 4, 1], end: [1950, 9, 10] },
+  { start: [1951, 5, 6], end: [1951, 9, 9] },
+  { start: [1955, 5, 5], end: [1955, 9, 9] },
+  { start: [1956, 5, 20], end: [1956, 9, 30] },
+  { start: [1957, 5, 5], end: [1957, 9, 22] },
+  { start: [1958, 5, 4], end: [1958, 9, 21] },
+  { start: [1959, 5, 3], end: [1959, 9, 20] },
+  { start: [1960, 5, 1], end: [1960, 9, 18] },
+  { start: [1987, 5, 10], end: [1987, 10, 11] },
+  { start: [1988, 5, 8], end: [1988, 10, 9] },
+];
+
+export function isHistoricalDstDate(year: number, month: number, day: number): boolean {
+  const t = new Date(year, month - 1, day).getTime();
+  return HISTORICAL_DST_PERIODS.some(({ start, end }) => {
+    const s = new Date(start[0], start[1] - 1, start[2]).getTime();
+    const e = new Date(end[0], end[1] - 1, end[2]).getTime();
+    return t >= s && t <= e;
+  });
+}
+
+/**
+ * 그 날짜에 KST(UTC+9=540분) 대신 실제로 쓰였던 민간 표준시 오프셋(분).
+ * 예: 평시 540(UTC+9) · UTC+8:30 시기 510 · 서머타임 겹치면 각각 +60.
+ */
+function getHistoricalUtcOffsetMinutes(year: number, month: number, day: number): number {
+  const base = isInHistoricalUTC830Period(year, month, day) ? 510 : 540;
+  return isHistoricalDstDate(year, month, day) ? base + 60 : base;
+}
+
+/** 입력된 시:분(그 시절 실제 시계 값)을 절기 데이터와 비교 가능한 KST 환산 시각으로 바꾸는 데 필요한 보정(분). */
+export function historicalMinuteCorrection(year: number, month: number, day: number): number {
+  return 540 - getHistoricalUtcOffsetMinutes(year, month, day);
+}
+
+function addMinutesToDate(year: number, month: number, day: number, hour: number, minute: number, deltaMin: number) {
+  const d = new Date(year, month - 1, day, hour, minute + deltaMin);
+  return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(), hour: d.getHours(), minute: d.getMinutes() };
+}
+
+/**
  * 메인 사주 계산 함수
  */
 export function calculateSaju(
@@ -474,35 +535,51 @@ export function calculateSaju(
   // 자시(23:00~01:00) 야자시/조자시 판정 및 시주 시각 보정
   let calcHour = exactHour;
   let calcMinute = exactMinute;
-  let hourBranchIdx: number;
 
   if (calcHour !== -1 && !hourUnknown) {
-    // 정확한 시:분이 주어지면 12시진 버튼 선택과 무관하게 그 시각으로 직접 시진 지지를 산출
-    hourBranchIdx = calcHour === 23 ? 0 : Math.floor((calcHour + 1) / 2) % 12;
+    // 정확한 시:분이 주어지면 그대로 사용 (아래에서 hourBranchIdx를 통일된 공식으로 산출)
   } else {
     const hourBranch = HOUR_BRANCHES.find(h => h.id === hourBranchId) ?? HOUR_BRANCHES.find(h => h.id === '오시')!;
-    hourBranchIdx = hourBranch.branchIdx;
     const isYajasi = hourBranch.id === '야자시';
     // 시간을 모르면 절기/대운 계산에 중립적인 정오(12시)를 기준값으로 사용
-    calcHour = hourUnknown ? 12 : (isYajasi ? 23 : (hourBranchIdx === 0 ? 0 : (hourBranchIdx * 2 - 1)));
+    calcHour = hourUnknown ? 12 : (isYajasi ? 23 : (hourBranch.branchIdx === 0 ? 0 : (hourBranch.branchIdx * 2 - 1)));
     calcMinute = 0;
   }
 
+  // 역사적 표준시(UTC+8:30 시기·서머타임) 보정 (historicalMinuteCorrection 설명 참고).
+  // 시간을 모르면(정오 근사값) 보정할 실제 시계값이 없으므로 건너뛴다.
+  let effYear = year;
+  let effMonth = month;
+  let effDay = day;
+  if (!hourUnknown) {
+    const correctionMin = historicalMinuteCorrection(year, month, day);
+    if (correctionMin !== 0) {
+      const adj = addMinutesToDate(year, month, day, calcHour, calcMinute, correctionMin);
+      effYear = adj.year;
+      effMonth = adj.month;
+      effDay = adj.day;
+      calcHour = adj.hour;
+      calcMinute = adj.minute;
+    }
+  }
+
+  const hourBranchIdx = calcHour === 23 ? 0 : Math.floor((calcHour + 1) / 2) % 12;
+
   // 야자시(23:00~24:00) 보정: 일주(日柱)만 다음 날로 이월. 연주/월주는 절기 판정을 위해
-  // 실제 출생 시각(원래 날짜의 23시대) 그대로 사용해야 하므로 별도로 날짜를 분리해서 계산한다.
-  let dayPillarYear = year;
-  let dayPillarMonth = month;
-  let dayPillarDay = day;
+  // 실제 출생 시각(보정된 날짜의 23시대) 그대로 사용해야 하므로 별도로 날짜를 분리해서 계산한다.
+  let dayPillarYear = effYear;
+  let dayPillarMonth = effMonth;
+  let dayPillarDay = effDay;
   if (calcHour === 23) {
-    const tempDate = new Date(year, month - 1, day);
+    const tempDate = new Date(effYear, effMonth - 1, effDay);
     tempDate.setDate(tempDate.getDate() + 1);
     dayPillarYear = tempDate.getFullYear();
     dayPillarMonth = tempDate.getMonth() + 1;
     dayPillarDay = tempDate.getDate();
   }
 
-  const yearPillar = calcYearPillar(year, month, day, calcHour, calcMinute);
-  const monthPillar = calcMonthPillar(year, month, day, calcHour, calcMinute, yearPillar.stemIdx);
+  const yearPillar = calcYearPillar(effYear, effMonth, effDay, calcHour, calcMinute);
+  const monthPillar = calcMonthPillar(effYear, effMonth, effDay, calcHour, calcMinute, yearPillar.stemIdx);
   const dayPillar = calcDayPillar(dayPillarYear, dayPillarMonth, dayPillarDay);
   const hourPillar = hourUnknown ? null : calcHourPillar(hourBranchIdx, dayPillar.stemIdx);
 
@@ -512,9 +589,9 @@ export function calculateSaju(
 
   // 대운/세운 산출 (시간을 모르면 절기 대운수 계산은 정오 기준으로 근사)
   const { daeunStartAge, daeunList } = calculateDaeun(
-    year,
-    month,
-    day,
+    effYear,
+    effMonth,
+    effDay,
     hourUnknown ? 12 : (calcHour === -1 ? 12 : calcHour),
     calcMinute,
     gender,

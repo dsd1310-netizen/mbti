@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSaju, calcDayPillar } from './sajuCalculator';
+import { calculateSaju, calcDayPillar, isInHistoricalUTC830Period, isHistoricalDstDate, historicalMinuteCorrection } from './sajuCalculator';
 
 describe('calculateSaju — 실제 프로덕션 화면에서 확인한 기준값 회귀 테스트', () => {
   // 1995-09-27 / 오시 / 여성 — mobile-flow 실측(계획안.md 참고)에서 직접 확인한 값.
@@ -70,6 +70,90 @@ describe('calculateSaju — 시간 관련 옵션', () => {
     const exact = calculateSaju(2000, 1, 1, '오시', 'female', false, 23, 30);
     const nextDay = calcDayPillar(2000, 1, 2);
     expect(exact.dayPillar.text).toBe(nextDay.text);
+  });
+});
+
+describe('calculateSaju — 1954~1961년 UTC+8:30 표준시 보정', () => {
+  // 1955-02-04 입춘은 23:17(KST 환산). 그 시절 실제 시계(UTC+8:30)로 22:55에 태어났다면
+  // KST 환산 23:25로, 입춘을 넘긴 뒤라 1955년(을미) 연주 + 인월(寅月)이 맞다. 보정이
+  // 없으면 22:55 그대로 23:17과 비교해 "입춘 전"으로 오판, 1954년(갑오) 연주가 나온다.
+  it('1955-02-04 22:55(당시 UTC+8:30 시계) 출생자는 30분 보정 후 입춘을 넘겨 을미년/인월로 계산된다', () => {
+    const r = calculateSaju(1955, 2, 4, '오시', 'female', false, 22, 55);
+    expect(r.yearPillar.text).toBe('을미');
+    expect(r.monthPillar.branchIdx).toBe(2); // 인(寅)
+  });
+
+  it('경계일 판정: 1961-08-09는 보정 대상이고 1961-08-10은 대상이 아니다', () => {
+    expect(isInHistoricalUTC830Period(1961, 8, 9)).toBe(true);
+    expect(isInHistoricalUTC830Period(1961, 8, 10)).toBe(false);
+  });
+
+  it('경계일 판정: 1954-03-21은 보정 대상이고 1954-03-20은 대상이 아니다', () => {
+    expect(isInHistoricalUTC830Period(1954, 3, 21)).toBe(true);
+    expect(isInHistoricalUTC830Period(1954, 3, 20)).toBe(false);
+  });
+
+  it('보정 대상 기간 밖(1965년)은 같은 상황이어도 30분 보정이 적용되지 않는다', () => {
+    // 1965-02-04 입춘 9:46(KST). 09:30 출생은 보정 기간 밖이라 여전히 "입춘 전" → 1964년(갑진) 연주.
+    const r = calculateSaju(1965, 2, 4, '오시', 'female', false, 9, 30);
+    expect(r.yearPillar.text).toBe('갑진');
+  });
+
+  it('hourUnknown(시간 모름)이면 보정 기간 안이라도 30분 보정을 건너뛴다', () => {
+    const known = calculateSaju(1955, 6, 15, '오시', 'female', false);
+    const unknown = calculateSaju(1955, 6, 15, '오시', 'female', true);
+    expect(unknown.yearPillar.text).toBe(known.yearPillar.text);
+  });
+});
+
+describe('historicalMinuteCorrection — 서머타임 겹침까지 반영한 보정값', () => {
+  it('평시(보정 대상 아닌 날)는 보정 없음(0분)', () => {
+    expect(historicalMinuteCorrection(1995, 9, 27)).toBe(0);
+  });
+
+  it('1954~1961년 UTC+8:30 시기(서머타임 아닌 날)는 +30분', () => {
+    expect(isHistoricalDstDate(1955, 2, 4)).toBe(false);
+    expect(historicalMinuteCorrection(1955, 2, 4)).toBe(30);
+  });
+
+  it('1955~1960년 서머타임 기간은 UTC+8:30 기준에 +1시간이 겹쳐 UTC+9:30 — 보정은 -30분', () => {
+    // 1957-07-15는 그해 서머타임 기간(5/5~9/22) 안이면서 동시에 UTC+8:30 시기(1954~1961) 안.
+    expect(isInHistoricalUTC830Period(1957, 7, 15)).toBe(true);
+    expect(isHistoricalDstDate(1957, 7, 15)).toBe(true);
+    expect(historicalMinuteCorrection(1957, 7, 15)).toBe(-30);
+  });
+
+  it('1948~1951년 서머타임(UTC+9 기준 시기)은 UTC+10 — 보정은 -60분', () => {
+    expect(historicalMinuteCorrection(1949, 7, 1)).toBe(-60);
+  });
+
+  it('1987~1988년 서머타임(이미 UTC+9로 복귀한 시기)도 UTC+10 — 보정은 -60분', () => {
+    expect(historicalMinuteCorrection(1987, 6, 1)).toBe(-60);
+    expect(historicalMinuteCorrection(1988, 6, 1)).toBe(-60);
+  });
+
+  it('서머타임 시작/종료 경계일은 포함, 그 하루 전/후는 미적용', () => {
+    expect(isHistoricalDstDate(1960, 5, 1)).toBe(true);
+    expect(isHistoricalDstDate(1960, 4, 30)).toBe(false);
+    expect(isHistoricalDstDate(1960, 9, 18)).toBe(true);
+    expect(isHistoricalDstDate(1960, 9, 19)).toBe(false);
+  });
+});
+
+describe('calculateSaju — 1987년 서머타임 구간(그동안 미반영이던 케이스) 실제 반영 확인', () => {
+  // historicalMinuteCorrection이 0이 아니면 calculateSaju 파이프라인에도 실제로 적용되는지
+  // 야자시 이월 여부로 간접 확인 — 서머타임 -60분 보정이 없으면 23:05는 그대로 23시대(야자시,
+  // 일주 다음날 이월)지만, 보정이 적용되면 22:05로 바뀌어 야자시가 아니게 된다.
+  it('1987-06-01 23:05(서머타임 -60분 보정 후 22:05)는 야자시가 아니라 일주가 이월되지 않는다', () => {
+    const r = calculateSaju(1987, 6, 1, '오시', 'female', false, 23, 5);
+    const sameDay = calcDayPillar(1987, 6, 1);
+    expect(r.dayPillar.text).toBe(sameDay.text);
+  });
+
+  it('서머타임 기간이 아닌 1986-06-01 23:05는 보정 없이 야자시로 처리돼 일주가 다음날로 이월된다', () => {
+    const r = calculateSaju(1986, 6, 1, '오시', 'female', false, 23, 5);
+    const nextDay = calcDayPillar(1986, 6, 2);
+    expect(r.dayPillar.text).toBe(nextDay.text);
   });
 });
 

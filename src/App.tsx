@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import './App.css';
 import heroImage from './assets/hero.png';
 import { calculateSaju, calcDayPillar, HOUR_BRANCHES, EARTHLY_BRANCHES, hourBranchIdFromExactTime, Pillar, SajuResult } from './utils/sajuCalculator';
@@ -35,7 +35,8 @@ import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestio
 import { KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult, PlanetKey } from './utils/astrologyData';
 import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
-import { comparePillars, PairCompatibilityResult } from './utils/pairCompatibility';
+import { comparePillars, PairCompatibilityResult, GWIIN_TYPE_META, STEM_RELATION_LABEL } from './utils/pairCompatibility';
+import { GwiinMap, GwiinMapNode } from './components/GwiinMap';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
 import { recordTodayVisitAndGetStreak, getHighestTier, getEarnedTiers, STREAK_TIERS, EarnedTier } from './utils/streak';
 import { trackResultViewAndMaybeRequestReview } from './utils/appReview';
@@ -43,7 +44,8 @@ import { DEPLOY_DOMAIN, DEPLOY_ORIGIN } from './deployConfig';
 import { trackEvent } from './utils/analytics';
 import type { User } from 'firebase/auth';
 import { NapuliMark } from './components/NapuliMark';
-import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY, GUIDE_LAST_SHOWN_KEY, GUIDE_DAILY_ENABLED_KEY, GUIDE_FEATURES } from './appTypes';
+import { PaywallOptions } from './components/PaywallOptions';
+import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY, GUIDE_LAST_SHOWN_KEY, GUIDE_DAILY_ENABLED_KEY, GUIDE_FEATURES, RESULT_HINT_SEEN_KEY } from './appTypes';
 import {
   loadCloudSync, isChunkLoadError,
   MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
@@ -58,6 +60,9 @@ import {
   setCachedItem, GEMINI_API_KEY,
   CompatInvite, encodeCompatInvite, decodeCompatInvite,
 } from './appHelpers';
+import { fetchCreditBalance, consumeCredit, CREDIT_GATE_ENABLED } from './utils/credits';
+import { initPurchases, purchaseCreditPackage } from './utils/purchases';
+import { requestTossPayment, readTossReturnParams, clearTossReturnParams, CreditPriceOption } from './utils/tossPayments';
 
 // ─── 타입은 ./appTypes.ts, 순수 헬퍼/캐시 키 함수는 ./appHelpers.ts로 이동 (2026-08-07) ───
 
@@ -98,6 +103,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [cloudSyncLoading, setCloudSyncLoading] = useState(false);
   const [cloudSyncAvailable, setCloudSyncAvailable] = useState(false);
+  // 심화해석 6종 크레딧제 — 이 기능들만 로그인 필수(계획안.md 8-3 참고), 나머지는 계속 비로그인 무료.
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [showLoginGateModal, setShowLoginGateModal] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false);
+  const [paywallLoading, setPaywallLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [introError, setIntroError] = useState<string | null>(null);
   const [selectedModal, setSelectedModal] = useState<{ title: string; content: string; extra?: string } | null>(null);
@@ -226,6 +236,8 @@ export default function App() {
   // 헤더의 "가이드" 버튼으로 언제든 수동으로 다시 볼 수 있음(handleOpenGuide).
   const [guideModalOpen, setGuideModalOpen] = useState(false);
   const [guideDailyEnabled, setGuideDailyEnabled] = useState(() => localStorage.getItem(GUIDE_DAILY_ENABLED_KEY) !== 'false');
+  // 결과 화면에 처음 도달했을 때 딱 1회만 보여주는 "어디부터 볼지" 안내 배너.
+  const [showResultHint, setShowResultHint] = useState(() => !localStorage.getItem(RESULT_HINT_SEEN_KEY));
 
   useEffect(() => {
     if (localStorage.getItem(GUIDE_DAILY_ENABLED_KEY) === 'false') return;
@@ -277,7 +289,14 @@ export default function App() {
         setCloudSyncAvailable(mod.cloudSyncAvailable);
         unsubscribe = mod.subscribeToAuthState(async (user) => {
           setCurrentUser(user);
-          if (!user) return;
+          if (!user) {
+            setCreditBalance(null);
+            return;
+          }
+          if (CREDIT_GATE_ENABLED) {
+            fetchCreditBalance(user).then(r => { if (r.ok) setCreditBalance(r.credits); });
+            initPurchases(user.uid);
+          }
           setCloudSyncLoading(true);
           try {
             const cloud = await mod.fetchCloudBookmarks<Bookmark>(user.uid);
@@ -392,6 +411,88 @@ export default function App() {
     }
   };
 
+  // ─── 심화해석 6종 크레딧제 ───────────────────────────────────────────
+  // 심화해석 버튼 핸들러(handleGenerate*Deep) 맨 앞에서 호출한다. 로그인이 안 돼 있으면
+  // 로그인 유도 모달, 크레딧이 0이면 결제 모달을 띄우고 false를 반환 — 호출부는 이미
+  // `if (!result) return null` 같은 이른 반환 관례를 쓰고 있어 자연스럽게 이어붙는다.
+  const ensureCreditForDeepGeneration = useCallback(async (): Promise<boolean> => {
+    if (!CREDIT_GATE_ENABLED) return true; // 킬스위치 꺼짐 — 기존처럼 완전 무료·비로그인으로 동작
+    if (!currentUser) {
+      setShowLoginGateModal(true);
+      return false;
+    }
+    const r = await consumeCredit(currentUser);
+    if (!r.ok) {
+      if (r.reason === 'LOGIN_REQUIRED') {
+        setShowLoginGateModal(true);
+      } else {
+        setShowPaywallModal(true);
+      }
+      return false;
+    }
+    setCreditBalance(r.credits);
+    return true;
+  }, [currentUser]);
+
+  // 토스페이먼츠 결제창에서 돌아왔을 때(웹 전용) 최초 1회 승인 요청 처리.
+  useEffect(() => {
+    if (!CREDIT_GATE_ENABLED) return;
+    const params = readTossReturnParams();
+    if (!params || !currentUser) return;
+    (async () => {
+      try {
+        const idToken = await currentUser.getIdToken();
+        const res = await fetch(`${DEPLOY_ORIGIN}/api/toss-confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify(params),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`크레딧 ${data.credits}개가 충전됐어요 🎉`);
+          const balance = await fetchCreditBalance(currentUser);
+          if (balance.ok) setCreditBalance(balance.credits);
+        } else {
+          showToast(`결제 확인에 실패했어요: ${data?.error?.message ?? '알 수 없는 오류'}`);
+        }
+      } catch (err: any) {
+        showToast(`결제 확인 중 오류가 발생했어요: ${err?.message ?? '알 수 없는 오류'}`);
+      } finally {
+        clearTossReturnParams();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  const handlePurchaseCreditsNative = async (identifier: string) => {
+    setPaywallLoading(true);
+    try {
+      const started = await purchaseCreditPackage(identifier);
+      if (started && currentUser) {
+        // RevenueCat 웹훅(api/revenuecat-webhook.ts)이 비동기로 크레딧을 반영하므로 약간의
+        // 지연 후 재조회 — 아직 반영 전이면 사용자가 결제 모달을 닫고 다시 열 때 다시 갱신됨.
+        setTimeout(async () => {
+          const balance = await fetchCreditBalance(currentUser);
+          if (balance.ok) { setCreditBalance(balance.credits); showToast(`크레딧이 충전됐어요 🎉`); }
+        }, 2000);
+        setShowPaywallModal(false);
+      }
+    } finally {
+      setPaywallLoading(false);
+    }
+  };
+
+  const handlePurchaseCreditsWeb = async (option: CreditPriceOption) => {
+    setPaywallLoading(true);
+    try {
+      await requestTossPayment(option); // 페이지 이동 — 성공 시 위 useEffect가 이어받음
+    } catch (err: any) {
+      showToast(err?.message ?? '결제를 시작하지 못했어요.');
+    } finally {
+      setPaywallLoading(false);
+    }
+  };
+
   // 풍수 수리 가이드 / 운세 해설 캐시 로드
   useEffect(() => {
     if (!result) { setFengShuiText(null); setUnseText(null); setFengShuiDeepText(null); setUnseDeepText(null); return; }
@@ -405,6 +506,29 @@ export default function App() {
   useEffect(() => {
     setPairCompatHistory(result ? getPairCompatHistory(result.formData) : []);
   }, [result]);
+
+  // 🌟 귀인지도 — 이력에 있는 상대마다 오행 상생상극 관계를 다시 계산(순수 계산이라 API 호출 없음)해
+  // 게임화 라벨(GWIIN_TYPE_META)을 입힌 노드 목록을 만든다. 정밀 궁합 계산 자체와 동일한 방식
+  // (handleComparePair 참고: 시간 모름으로 간주)으로 상대 사주를 산출해 일관성을 맞춤.
+  const gwiinNodes: GwiinMapNode[] = useMemo(() => {
+    if (!result) return [];
+    return pairCompatHistory.map((entry): GwiinMapNode | null => {
+      const py = parseInt(entry.partnerBirthYear);
+      const pm = parseInt(entry.partnerBirthMonth);
+      const pd = parseInt(entry.partnerBirthDay);
+      if (!py || !pm || !pd) return null;
+      const sajuB = calculateSaju(py, pm, pd, '오시', entry.partnerGender, true);
+      const rel = comparePillars(result.sajuResult, sajuB);
+      const type = GWIIN_TYPE_META[rel.dayStemRelation];
+      return {
+        id: `${entry.partnerName}_${entry.partnerBirthYear}${entry.partnerBirthMonth}${entry.partnerBirthDay}_${entry.partnerGender}`,
+        name: entry.partnerName,
+        genderEmoji: entry.partnerGender === 'male' ? '🌊' : '🌸',
+        type,
+        detail: STEM_RELATION_LABEL[rel.dayStemRelation],
+      };
+    }).filter((n): n is GwiinMapNode => n !== null);
+  }, [result, pairCompatHistory]);
 
   // AI 해석 4개 카테고리 + 처방전 캐시 로드
   useEffect(() => {
@@ -552,6 +676,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     setCategoryDeepLoading(prev => ({ ...prev, [category]: true }));
     try {
       const text = await generateCategoryDeepInterpretation(
@@ -721,6 +846,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     setFengShuiDeepLoading(true);
     try {
       const text = await generateFengShuiDeepInterpretation(
@@ -789,6 +915,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     const nowYear = new Date().getFullYear();
     const daeunIdx = result.sajuResult.daeunList.reduce(
       (acc, entry, idx) => (entry.age <= currentAge ? idx : acc), -1
@@ -851,6 +978,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     setElementSummaryDeepLoading(true);
     try {
       const text = await generateElementSummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult);
@@ -904,6 +1032,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     setCompatSummaryDeepLoading(true);
     try {
       const text = await generateCompatibilitySummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, {
@@ -957,6 +1086,7 @@ export default function App() {
       showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
       return null;
     }
+    if (!(await ensureCreditForDeepGeneration())) return null;
     setAstrologyDeepLoading(true);
     try {
       const text = await generateAstrologyDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.formData.gender, result.astrologyResult);
@@ -1092,6 +1222,9 @@ export default function App() {
       trackEvent('content_generate', { feature: 'pair_compat' });
     } catch (err: any) {
       showToast(`정밀 궁합 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      // 비교 자체(일주 산출·이력 기록)는 이미 끝난 뒤라, AI 해설만 실패해도 폼을 닫아 귀인지도/이전
+      // 이력으로 돌아갈 수 있게 함 — 안 닫으면 폼이 그대로 남아 사용자가 다시 시도할 방법이 새로고침뿐이었음.
+      setPartnerFormOpen(false);
     } finally {
       setPairCompatLoading(false);
     }
@@ -2547,6 +2680,11 @@ export default function App() {
     setStep('input');
   };
 
+  const handleDismissResultHint = () => {
+    localStorage.setItem(RESULT_HINT_SEEN_KEY, 'true');
+    setShowResultHint(false);
+  };
+
   const handleReset = () => {
     setStep('input');
     setResult(null);
@@ -2640,10 +2778,16 @@ export default function App() {
               </button>
             </div>
 
-            {GUIDE_FEATURES.map(f => (
+            {GUIDE_FEATURES.map((f, idx) => (
               <div key={f.title} className="guide-feature-card">
                 <img src={f.image} alt={f.title} loading="lazy" />
                 <div className="guide-feature-body">
+                  {idx === 0 && (
+                    <span className="hero-badge" style={{ marginBottom: 8 }}>
+                      <span className="hero-badge-dot" />
+                      먼저 보세요
+                    </span>
+                  )}
                   <div className="guide-feature-title">{f.emoji} {f.title}</div>
                   <div className="guide-feature-desc">{f.desc}</div>
                 </div>
@@ -2699,6 +2843,56 @@ export default function App() {
               </button>
               <button className="btn-secondary" onClick={() => setSelectedModal(null)}>닫기</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 모달 (심화해석 로그인 유도 — 비로그인 사용자가 심화해석을 시도했을 때) */}
+      {showLoginGateModal && (
+        <div className="modal-overlay" onClick={() => setShowLoginGateModal(false)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label="로그인 안내" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setShowLoginGateModal(false)}>✕</button>
+            <div style={{ marginBottom: 20 }}>
+              <div className="section-label">🔒 심화해석</div>
+              <div className="section-title">로그인하면 이용할 수 있어요</div>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              심화해석은 계정당 무료체험 3회 제공 후 크레딧으로 더 보실 수 있어요.
+              나풀이의 다른 기능(사주 조회, 기본 해석, 공유, 저장 등)은 로그인 없이 그대로 계속 무료로 쓸 수 있습니다.
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                className="btn-gold"
+                style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
+                onClick={async () => { await handleSignIn(); setShowLoginGateModal(false); }}
+              >
+                구글로 로그인
+              </button>
+              <button
+                className="btn-secondary"
+                style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
+                onClick={async () => { await handleSignInApple(); setShowLoginGateModal(false); }}
+              >
+                Apple로 로그인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 모달 (심화해석 크레딧 결제 — 네이티브는 RevenueCat, 웹은 토스페이먼츠) */}
+      {showPaywallModal && (
+        <div className="modal-overlay" onClick={() => !paywallLoading && setShowPaywallModal(false)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-label="크레딧 충전" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" aria-label="닫기" onClick={() => setShowPaywallModal(false)} disabled={paywallLoading}>✕</button>
+            <div style={{ marginBottom: 20 }}>
+              <div className="section-label">✨ 심화해석 크레딧</div>
+              <div className="section-title">크레딧을 충전해 주세요</div>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              현재 크레딧 {creditBalance ?? 0}개. 아래에서 충전하면 심화해석을 계속 볼 수 있어요.
+            </div>
+            <PaywallOptions loading={paywallLoading} onPurchaseNative={handlePurchaseCreditsNative} onPurchaseWeb={handlePurchaseCreditsWeb} />
           </div>
         </div>
       )}
@@ -2989,7 +3183,7 @@ export default function App() {
                     value={formData.birthYear}
                     onChange={handleChange}
                     placeholder="연도 (예: 1995)"
-                    min="1930" max="2030"
+                    min="1900" max="2100"
                   />
                   <input
                     className="form-input"
@@ -3012,14 +3206,6 @@ export default function App() {
                     style={{ textAlign: 'center' }}
                   />
                 </div>
-                {(() => {
-                  const y = parseInt(formData.birthYear);
-                  return !Number.isNaN(y) && y >= 1930 && y < 1940 ? (
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
-                      ⚠️ 1940년 이전 출생자는 절기 정밀 데이터가 없어 근사값으로 계산돼요. 절기 경계에 가까운 날짜라면 오차가 있을 수 있어요.
-                    </p>
-                  ) : null;
-                })()}
               </div>
 
               {/* 성별 */}
@@ -3328,6 +3514,21 @@ export default function App() {
               </div>
             </div>
 
+            {/* 처음 결과 화면에 도달했을 때 1회만 — "어디부터 볼지" 안내 (온보딩 진입점 과다 완화, 계획안.md 참고) */}
+            {showResultHint && (
+              <div className="glass-card" style={{
+                padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12,
+                border: '1px solid rgba(245, 200, 66, 0.25)',
+              }}>
+                <span style={{ fontSize: 20 }}>💡</span>
+                <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                  위 <strong style={{ color: 'var(--gold)' }}>사주원국</strong>과 아래 <strong style={{ color: 'var(--gold)' }}>🌌 운세</strong>부터 먼저 보시면 돼요.
+                  별자리·궁합·풍수 등 나머지는 궁금할 때 아래 탭에서 천천히 둘러보세요.
+                </div>
+                <button className="modal-close" aria-label="안내 닫기" style={{ position: 'static' }} onClick={handleDismissResultHint}>✕</button>
+              </div>
+            )}
+
             {/* 결과 화면 대분류 탭 */}
             <div className="tab-nav section-tab-nav" role="tablist" aria-label="결과 섹션">
               {[
@@ -3433,6 +3634,24 @@ export default function App() {
                     <div className="fact-bomb-title">🔥 오늘의 팩폭 한줄</div>
                     <div className="fact-bomb-content">{dailyFortuneData.factBomb}</div>
                   </div>
+
+                  {/* 온보딩 브릿지 — 매일 보는 무료 콘텐츠에서 심화해석으로 자연스럽게 유도 (계획안.md 참고) */}
+                  <button
+                    type="button"
+                    className="glass-card"
+                    style={{
+                      marginTop: 14, padding: '14px 16px', width: '100%', textAlign: 'left',
+                      display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                      border: '1px solid rgba(139, 92, 246, 0.25)', background: 'rgba(139, 92, 246, 0.06)',
+                    }}
+                    onClick={() => { setActiveSection('saju'); setActiveSajuTab('ai'); setActiveTab('personality'); }}
+                  >
+                    <span style={{ fontSize: 20 }}>🔍</span>
+                    <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      오늘의 기운 말고, <strong style={{ color: 'var(--purple-light)' }}>{result.formData.name}님의 성격 자체</strong>를 더 깊게 알고 싶다면?
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--purple-light)', fontWeight: 700, whiteSpace: 'nowrap' }}>심화해석 →</span>
+                  </button>
                 </>
               ) : (
                 <div>
@@ -4000,21 +4219,31 @@ export default function App() {
                     + 상대방 입력하고 정밀 궁합 보기
                   </button>
                 )}
-                {/* 8-1: 이전에 비교한 상대 이력 — 폼 재입력 없이 바로 다시 보기 */}
-                {!partnerFormOpen && !pairCompatText && pairCompatHistory.length > 0 && (
+                {/* 🌟 귀인지도 — 이전에 비교한 상대들을 오행 관계 유형별 방사형 지도로 표시(계획안.md 참고).
+                    노드를 클릭하면 기존처럼 폼 재입력 없이 바로 다시 비교해 보여줌. */}
+                {!partnerFormOpen && !pairCompatText && gwiinNodes.length > 0 && (
                   <div style={{ marginTop: 14 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>이전에 비교한 상대</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {pairCompatHistory.map((entry) => (
-                        <button
-                          key={`${entry.partnerName}_${entry.partnerBirthYear}${entry.partnerBirthMonth}${entry.partnerBirthDay}_${entry.partnerGender}`}
-                          className="btn-secondary"
-                          style={{ padding: '6px 12px', fontSize: 12 }}
-                          onClick={() => handleReopenPairCompatHistory(entry)}
-                          disabled={pairCompatLoading}
-                        >
-                          {entry.partnerGender === 'male' ? '🌊' : '🌸'} {entry.partnerName}
-                        </button>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, textAlign: 'center' }}>
+                      🌟 귀인지도 — 노드를 눌러 다시 보기
+                    </div>
+                    <div style={{ opacity: pairCompatLoading ? 0.5 : 1, pointerEvents: pairCompatLoading ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
+                      <GwiinMap
+                        centerName={result.formData.name}
+                        nodes={gwiinNodes}
+                        onNodeClick={(id) => {
+                          const entry = pairCompatHistory.find(e =>
+                            `${e.partnerName}_${e.partnerBirthYear}${e.partnerBirthMonth}${e.partnerBirthDay}_${e.partnerGender}` === id
+                          );
+                          if (entry) handleReopenPairCompatHistory(entry);
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 12 }}>
+                      {Object.values(GWIIN_TYPE_META).map(t => (
+                        <span key={t.label} style={{ fontSize: 10.5, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color, display: 'inline-block' }} />
+                          {t.emoji} {t.label}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -4029,18 +4258,10 @@ export default function App() {
                       onChange={(e) => setPartnerName(e.target.value)}
                     />
                     <div className="grid-3">
-                      <input className="form-input" type="number" placeholder="연도" min="1930" max="2030" value={partnerBirthYear} onChange={(e) => setPartnerBirthYear(e.target.value)} />
+                      <input className="form-input" type="number" placeholder="연도" min="1900" max="2100" value={partnerBirthYear} onChange={(e) => setPartnerBirthYear(e.target.value)} />
                       <input className="form-input" type="number" placeholder="월" min="1" max="12" style={{ textAlign: 'center' }} value={partnerBirthMonth} onChange={(e) => setPartnerBirthMonth(e.target.value)} />
                       <input className="form-input" type="number" placeholder="일" min="1" max="31" style={{ textAlign: 'center' }} value={partnerBirthDay} onChange={(e) => setPartnerBirthDay(e.target.value)} />
                     </div>
-                    {(() => {
-                      const py = parseInt(partnerBirthYear);
-                      return !Number.isNaN(py) && py >= 1930 && py < 1940 ? (
-                        <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                          ⚠️ 1940년 이전 출생자는 절기 정밀 데이터가 없어 근사값으로 계산돼요. 절기 경계에 가까운 날짜라면 오차가 있을 수 있어요.
-                        </p>
-                      ) : null;
-                    })()}
                     <div style={{ display: 'flex', gap: 10 }}>
                       {[{ val: 'female', label: '🌸 여성' }, { val: 'male', label: '🌊 남성' }].map(g => (
                         <button
@@ -4560,6 +4781,23 @@ export default function App() {
                 </div>
               )}
             </div>
+            )}
+
+            {/* 🌙 손없는날 — 별도 정적 페이지 링크(SEO 공용 콘텐츠, 계획안.md 참고) */}
+            {activeSajuTab === 'fengshui' && (
+              <a
+                href="/sohn-eobsneun-nal.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="glass-card"
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', textDecoration: 'none' }}
+              >
+                <span style={{ fontSize: 20 }}>🌙</span>
+                <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  이사·개업 날짜 잡을 때 — <strong style={{ color: 'var(--text-primary)' }}>손없는날 계산기</strong> 무료로 보기
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--purple-light)' }}>→</span>
+              </a>
             )}
 
             </>)}
