@@ -35,7 +35,7 @@ import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestio
 import { KOREAN_CITIES, ZODIAC_SIGNS, PLANETS, HOUSES, DIGNITY_LABEL, AstrologyResult, PlanetKey } from './utils/astrologyData';
 import { drawDailyTarotCard } from './data/tarotCards';
 import { ARCHETYPE_FIGURES } from './data/archetypeFigures';
-import { comparePillars, PairCompatibilityResult, GWIIN_TYPE_META, STEM_RELATION_LABEL } from './utils/pairCompatibility';
+import { comparePillars, PairCompatibilityResult, GWIIN_TYPE_META, STEM_RELATION_LABEL, getGwiinScore } from './utils/pairCompatibility';
 import { GwiinMap, GwiinMapNode } from './components/GwiinMap';
 import { isNativePlatform, isDailyNotificationEnabled, enableDailyNotification, disableDailyNotification, getNotificationHour } from './utils/notifications';
 import { recordTodayVisitAndGetStreak, getHighestTier, getEarnedTiers, STREAK_TIERS, EarnedTier } from './utils/streak';
@@ -526,6 +526,7 @@ export default function App() {
         genderEmoji: entry.partnerGender === 'male' ? '🌊' : '🌸',
         type,
         detail: STEM_RELATION_LABEL[rel.dayStemRelation],
+        score: getGwiinScore(rel),
       };
     }).filter((n): n is GwiinMapNode => n !== null);
   }, [result, pairCompatHistory]);
@@ -4285,6 +4286,7 @@ export default function App() {
                     {/* 🌟 귀인지도에 방금 추가된 관계 유형을 바로 보여줌 — 비교와 지도 사이 연결고리 */}
                     {(() => {
                       const type = GWIIN_TYPE_META[pairCompare.dayStemRelation];
+                      const score = getGwiinScore(pairCompare);
                       return (
                         <div style={{
                           display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
@@ -4296,6 +4298,10 @@ export default function App() {
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 2 }}>🌟 귀인지도에 추가됐어요</div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: type.color }}>{partnerName}님은 나에게 "{type.label}"</div>
                             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.6 }}>{STEM_RELATION_LABEL[pairCompare.dayStemRelation]}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                            <div style={{ fontSize: 22, fontWeight: 900, color: type.color, lineHeight: 1 }}>{score}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>점</div>
                           </div>
                         </div>
                       );

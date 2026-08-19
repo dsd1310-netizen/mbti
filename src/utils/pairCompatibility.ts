@@ -21,7 +21,7 @@ export const STEM_RELATION_LABEL: Record<StemRelationType, string> = {
 /**
  * 귀인지도용 게임화 라벨 — 위 STEM_RELATION_LABEL(학술적 설명)과 같은 6가지 분류를
  * 사주도령 "귀인지도"류 UX처럼 한눈에 와닿는 이름·이모지·색으로 재포장한 것.
- * 오행 이론 자체(상생상극 판정 로직)는 그대로, 표현만 게임처럼 바꿈.
+ * 오행 이론 자체(상생상극 판정 로직)는 그대로, 표현만 게임 아이템 컨셉으로 바꿈.
  */
 export interface GwiinTypeMeta {
   label: string;
@@ -29,13 +29,42 @@ export interface GwiinTypeMeta {
   color: string;
 }
 export const GWIIN_TYPE_META: Record<StemRelationType, GwiinTypeMeta> = {
-  'b-generates-a': { label: '귀인', emoji: '🌟', color: '#f5c842' },
-  'a-generates-b': { label: '내 편', emoji: '🌱', color: '#34d399' },
-  'a-controls-b': { label: '라이벌', emoji: '⚡', color: '#8b5cf6' },
-  'b-controls-a': { label: '자극제', emoji: '🔥', color: '#fb923c' },
-  'same': { label: '동료', emoji: '🤝', color: '#60a5fa' },
-  'neutral': { label: '무난한 사이', emoji: '◯', color: '#9ca3af' },
+  'b-generates-a': { label: '치트키', emoji: '🎁', color: '#f5c842' },
+  'a-generates-b': { label: '성장캐', emoji: '🌱', color: '#34d399' },
+  'a-controls-b': { label: '라이벌전', emoji: '⚔️', color: '#8b5cf6' },
+  'b-controls-a': { label: '카페인', emoji: '☕', color: '#fb923c' },
+  'same': { label: '평행이론', emoji: '🪞', color: '#60a5fa' },
+  'neutral': { label: '잔잔케미', emoji: '💧', color: '#9ca3af' },
 };
+
+/**
+ * 귀인지도 궁합 점수(5~99) — 일간 오행 상생상극(기본 점수) + 일지 관계(가감점)를
+ * 조합한 재미용 지표. 학술적 정밀도를 주장하는 게 아니라, 이미 계산된 두 관계 판정을
+ * 한눈에 보이는 숫자 하나로 요약해 보여주기 위한 게임화 장치.
+ */
+const STEM_RELATION_BASE_SCORE: Record<StemRelationType, number> = {
+  'b-generates-a': 88,
+  'a-generates-b': 82,
+  'same': 72,
+  'neutral': 65,
+  'a-controls-b': 60,
+  'b-controls-a': 55,
+};
+const BRANCH_RELATION_SCORE_DELTA: Record<BranchRelationType, number> = {
+  '육합': 12,
+  '삼합': 8,
+  '충': -18,
+  '형': -14,
+  '파': -7,
+  '해': -6,
+};
+export function getGwiinScore(rel: Pick<PairCompatibilityResult, 'dayStemRelation' | 'dayBranchRelations'>): number {
+  const raw = rel.dayBranchRelations.reduce(
+    (score, branchRel) => score + BRANCH_RELATION_SCORE_DELTA[branchRel],
+    STEM_RELATION_BASE_SCORE[rel.dayStemRelation]
+  );
+  return Math.max(5, Math.min(99, Math.round(raw)));
+}
 
 export interface PairCompatibilityResult {
   dayBranchRelations: BranchRelationType[]; // 동시에 여러 관계가 성립할 수 있음(드묾)

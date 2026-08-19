@@ -7,6 +7,7 @@ export interface GwiinMapNode {
   genderEmoji: string; // 🌊(남)/🌸(여)
   type: GwiinTypeMeta;
   detail: string; // 학술적 설명 — 노드를 탭하면 뜨는 설명 팝업에 노출
+  score: number; // 5~99, 재미용 궁합 점수(getGwiinScore)
 }
 
 /**
@@ -80,8 +81,10 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
             >
               <circle r={nodeRadius + 10} fill={`url(#gwiinGlow-${node.id})`} />
               <circle r={nodeRadius} fill="rgba(20, 18, 50, 0.92)" stroke={node.type.color} strokeWidth={3} style={{ cursor: 'pointer' }} />
-              <text textAnchor="middle" y={-5} fontSize={20} style={{ pointerEvents: 'none' }}>{node.type.emoji}</text>
-              <text textAnchor="middle" y={13} fontSize={10.5} fill="var(--text-secondary)" style={{ pointerEvents: 'none' }}>{node.genderEmoji} {node.name.slice(0, 4)}</text>
+              <text textAnchor="middle" y={-8} fontSize={18} style={{ pointerEvents: 'none' }}>{node.type.emoji}</text>
+              <text textAnchor="middle" y={8} fontSize={10.5} fill="var(--text-secondary)" style={{ pointerEvents: 'none' }}>{node.genderEmoji} {node.name.slice(0, 4)}</text>
+              <circle cx={nodeRadius * 0.62} cy={-nodeRadius * 0.62} r={13} fill="#1a1530" stroke={node.type.color} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+              <text x={nodeRadius * 0.62} y={-nodeRadius * 0.62 + 3.5} textAnchor="middle" fontSize={9} fontWeight={800} fill={node.type.color} style={{ pointerEvents: 'none' }}>{node.score}</text>
             </g>
           );
         })}
@@ -94,6 +97,10 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
             <div style={{ textAlign: 'center', marginBottom: 16 }}>
               <div style={{ fontSize: 40, marginBottom: 8 }}>{selected.type.emoji}</div>
               <div className="section-title" style={{ color: selected.type.color }}>{selected.genderEmoji} {selected.name} · {selected.type.label}</div>
+              <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, marginTop: 8, padding: '4px 14px', borderRadius: 999, background: `${selected.type.color}18`, border: `1px solid ${selected.type.color}55` }}>
+                <span style={{ fontSize: 20, fontWeight: 900, color: selected.type.color }}>{selected.score}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>점</span>
+              </div>
             </div>
             <div style={{ fontSize: 13.5, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 20, textAlign: 'center' }}>
               {selected.detail}
