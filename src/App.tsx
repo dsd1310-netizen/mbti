@@ -4282,6 +4282,24 @@ export default function App() {
                 )}
                 {pairCompatText && pairSajuB && pairCompare && (
                   <>
+                    {/* 🌟 귀인지도에 방금 추가된 관계 유형을 바로 보여줌 — 비교와 지도 사이 연결고리 */}
+                    {(() => {
+                      const type = GWIIN_TYPE_META[pairCompare.dayStemRelation];
+                      return (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+                          padding: '14px 16px', borderRadius: 14,
+                          background: `${type.color}18`, border: `1px solid ${type.color}55`,
+                        }}>
+                          <span style={{ fontSize: 30 }}>{type.emoji}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 2 }}>🌟 귀인지도에 추가됐어요</div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: type.color }}>{partnerName}님은 나에게 "{type.label}"</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.6 }}>{STEM_RELATION_LABEL[pairCompare.dayStemRelation]}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
                       <div style={{ flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{result.formData.name}</div>
