@@ -3603,6 +3603,32 @@ export default function App() {
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
 
+            {/* 🏠 나풀이의 방 진입 카드 — 오행별 배경(public/gwiin/room)에 캐릭터가 사는 나만의 공간.
+                헤더는 이미 버튼 3개(가이드/다이어리/다시하기)로 꽉 차 있어(모바일 375px 기준) 새 버튼을
+                추가하지 않고, "오늘 = 매일 들르는 곳"이라는 기존 구조에 자연스럽게 편입시킴. */}
+            <button
+              type="button"
+              className="glass-card"
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, overflow: 'hidden',
+                display: 'flex', alignItems: 'center', gap: 14,
+              }}
+              onClick={() => setStep('room')}
+            >
+              <img
+                src={`/gwiin/room/${result.sajuResult.dayStemElement}.webp`}
+                alt="나풀이의 방"
+                style={{ width: 84, height: 84, objectFit: 'cover', flexShrink: 0 }}
+              />
+              <div style={{ flex: 1, padding: '14px 14px 14px 0' }}>
+                <div className="section-label">🏠 나풀이의 방</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  {result.formData.name}님의 나풀이가 사는 공간을 구경해보세요
+                </div>
+              </div>
+              <span style={{ fontSize: 14, color: 'var(--gold)', paddingRight: 16, flexShrink: 0 }}>→</span>
+            </button>
+
             {/* 매일 알림 (네이티브 앱 전용) */}
             {isNativePlatform() && (
               <div className="glass-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -5181,6 +5207,68 @@ export default function App() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* 🏠 나풀이의 방 — 캐릭터 에셋 마지막 통합 지점. 새 상태/계산 없이 이미 앱에 있는 값들
+            (오늘의 기운·배지·다이어리 기록·귀인지도 상대 수)을 한 화면에 모아 보여주는 정적 요약 화면.
+            아이템 배치 등 상호작용 시스템은 범위 밖(계획안.md 참고). */}
+        {step === 'room' && result && (
+          <div className="animate-fade-in" style={{ paddingTop: 32 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div className="section-label">🏠 {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko} 나풀이의 방</div>
+                <div className="section-title">{result.formData.name}님의 공간</div>
+              </div>
+              <button className="btn-secondary" onClick={() => setStep('result')}>← 돌아가기</button>
+            </div>
+
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', marginBottom: 20 }}>
+              <img
+                src={`/gwiin/room/${result.sajuResult.dayStemElement}.webp`}
+                alt="나풀이의 방 배경"
+                style={{ width: '100%', display: 'block' }}
+              />
+              <img
+                src={`/gwiin/element/${result.sajuResult.dayStemElement}.webp`}
+                alt="나의 나풀이"
+                style={{
+                  position: 'absolute', bottom: '6%', left: '50%', transform: 'translateX(-50%)',
+                  width: '28%', maxWidth: 130, filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.5))',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div className="glass-card" style={{ padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>🌅</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)' }}>
+                  {dailyFortuneData?.keyword ?? '아직 없음'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>오늘의 기운</div>
+              </div>
+              <div className="glass-card" style={{ padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>🏅</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)' }}>
+                  {earnedTiers.length} / {STREAK_TIERS.length}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>획득 배지</div>
+              </div>
+              <div className="glass-card" style={{ padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>📔</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)' }}>
+                  {bookmarks.length}개
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>다이어리 기록</div>
+              </div>
+              <div className="glass-card" style={{ padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>🤝</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)' }}>
+                  {pairCompatHistory.length}명
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>귀인지도에서 만남</div>
+              </div>
+            </div>
           </div>
         )}
       </main>
