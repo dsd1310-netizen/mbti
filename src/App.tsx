@@ -3619,9 +3619,17 @@ export default function App() {
             {/* 오늘의 나풀이 (데일리 운세) */}
             <div className="glass-card-gold" style={{ padding: '20px 22px' }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                <div>
-                  <div className="section-label">🌅 오늘의 나풀이</div>
-                  <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {/* 결과 화면 상단 탄생 포스터와 같은 오행 캐릭터 — "같은 나풀이가 매일 말을 걸어준다"는 느낌 */}
+                  <img
+                    src={`/gwiin/element/${result.sajuResult.dayStemElement}.webp`}
+                    alt="나풀이"
+                    style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid rgba(245, 200, 66, 0.4)', flexShrink: 0 }}
+                  />
+                  <div>
+                    <div className="section-label">🌅 오늘의 나풀이</div>
+                    <div className="section-title" style={{ fontSize: 16 }}>{todayDateStr()}</div>
+                  </div>
                 </div>
                 {dailyFortuneData && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
