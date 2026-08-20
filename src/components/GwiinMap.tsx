@@ -26,9 +26,9 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
 }) {
   const [selected, setSelected] = useState<GwiinMapNode | null>(null);
 
-  const size = 320;
+  const size = 340;
   const center = size / 2;
-  const orbitRadius = 118;
+  const orbitRadius = 108;
   const nodeRadius = 32;
   const centerRadius = 40;
 
@@ -44,6 +44,12 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
             <stop offset="0%" stopColor="#ffe577" />
             <stop offset="100%" stopColor="#f5c842" />
           </radialGradient>
+          <clipPath id="gwiinCenterClip">
+            <circle r={centerRadius - 3} />
+          </clipPath>
+          <clipPath id="gwiinNodeClip">
+            <circle r={nodeRadius - 3} />
+          </clipPath>
           {nodes.map(node => (
             <radialGradient key={`glow-${node.id}`} id={`gwiinGlow-${node.id}`} cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor={node.type.color} stopOpacity={0.55} />
@@ -59,10 +65,20 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
           return <line key={node.id} x1={center} y1={center} x2={x} y2={y} stroke={node.type.color} strokeOpacity={0.35} strokeWidth={2} />;
         })}
 
-        {/* 나 (중심) */}
+        {/* 나 (중심) — 나풀이 캐릭터 이미지 */}
         <circle cx={center} cy={center} r={centerRadius + 10} fill="url(#gwiinCenterGrad)" opacity={0.25} />
         <circle cx={center} cy={center} r={centerRadius} fill="url(#gwiinCenterGrad)" stroke="var(--gold)" strokeWidth={2} />
-        <text x={center} y={center + 6} textAnchor="middle" fontSize={16} fontWeight={800} fill="#1a1530">나</text>
+        <g transform={`translate(${center}, ${center})`}>
+          <image
+            href="/gwiin/na.webp"
+            x={-(centerRadius - 3)}
+            y={-(centerRadius - 3)}
+            width={(centerRadius - 3) * 2}
+            height={(centerRadius - 3) * 2}
+            clipPath="url(#gwiinCenterClip)"
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
 
         {nodes.map((node, idx) => {
           const angle = (2 * Math.PI * idx) / nodes.length - Math.PI / 2;
@@ -81,8 +97,16 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
             >
               <circle r={nodeRadius + 10} fill={`url(#gwiinGlow-${node.id})`} />
               <circle r={nodeRadius} fill="rgba(20, 18, 50, 0.92)" stroke={node.type.color} strokeWidth={3} style={{ cursor: 'pointer' }} />
-              <text textAnchor="middle" y={-8} fontSize={18} style={{ pointerEvents: 'none' }}>{node.type.emoji}</text>
-              <text textAnchor="middle" y={8} fontSize={10.5} fill="var(--text-secondary)" style={{ pointerEvents: 'none' }}>{node.genderEmoji} {node.name.slice(0, 4)}</text>
+              <image
+                href={node.type.image}
+                x={-(nodeRadius - 3)}
+                y={-(nodeRadius - 3)}
+                width={(nodeRadius - 3) * 2}
+                height={(nodeRadius - 3) * 2}
+                clipPath="url(#gwiinNodeClip)"
+                style={{ pointerEvents: 'none' }}
+              />
+              <text textAnchor="middle" y={nodeRadius + 14} fontSize={10.5} fill="var(--text-secondary)" style={{ pointerEvents: 'none' }}>{node.genderEmoji} {node.name.slice(0, 4)}</text>
               <circle cx={nodeRadius * 0.62} cy={-nodeRadius * 0.62} r={13} fill="#1a1530" stroke={node.type.color} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
               <text x={nodeRadius * 0.62} y={-nodeRadius * 0.62 + 3.5} textAnchor="middle" fontSize={9} fontWeight={800} fill={node.type.color} style={{ pointerEvents: 'none' }}>{node.score}</text>
             </g>
@@ -95,8 +119,12 @@ export function GwiinMap({ centerName, nodes, onNodeClick }: {
           <div className="modal-box" role="dialog" aria-modal="true" aria-label={`${selected.name} 관계 설명`} onClick={e => e.stopPropagation()}>
             <button className="modal-close" aria-label="닫기" onClick={() => setSelected(null)}>✕</button>
             <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>{selected.type.emoji}</div>
-              <div className="section-title" style={{ color: selected.type.color }}>{selected.genderEmoji} {selected.name} · {selected.type.label}</div>
+              <img
+                src={selected.type.image}
+                alt={`${selected.type.label} 일러스트`}
+                style={{ width: 140, height: 140, objectFit: 'contain', margin: '0 auto 8px' }}
+              />
+              <div className="section-title" style={{ color: selected.type.color }}>{selected.genderEmoji} {selected.name} · {selected.type.emoji} {selected.type.label}</div>
               <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, marginTop: 8, padding: '4px 14px', borderRadius: 999, background: `${selected.type.color}18`, border: `1px solid ${selected.type.color}55` }}>
                 <span style={{ fontSize: 20, fontWeight: 900, color: selected.type.color }}>{selected.score}</span>
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>점</span>

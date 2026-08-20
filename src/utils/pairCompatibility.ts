@@ -27,14 +27,16 @@ export interface GwiinTypeMeta {
   label: string;
   emoji: string;
   color: string;
+  /** 미드저니로 제작한 "나풀이" 캐릭터 궁합 상호작용 일러스트 (public/gwiin/*.webp) */
+  image: string;
 }
 export const GWIIN_TYPE_META: Record<StemRelationType, GwiinTypeMeta> = {
-  'b-generates-a': { label: '치트키', emoji: '🎁', color: '#f5c842' },
-  'a-generates-b': { label: '성장캐', emoji: '🌱', color: '#34d399' },
-  'a-controls-b': { label: '라이벌전', emoji: '⚔️', color: '#8b5cf6' },
-  'b-controls-a': { label: '카페인', emoji: '☕', color: '#fb923c' },
-  'same': { label: '평행이론', emoji: '🪞', color: '#60a5fa' },
-  'neutral': { label: '잔잔케미', emoji: '💧', color: '#9ca3af' },
+  'b-generates-a': { label: '치트키', emoji: '🎁', color: '#f5c842', image: '/gwiin/b-generates-a.webp' },
+  'a-generates-b': { label: '성장캐', emoji: '🌱', color: '#34d399', image: '/gwiin/a-generates-b.webp' },
+  'a-controls-b': { label: '라이벌전', emoji: '⚔️', color: '#8b5cf6', image: '/gwiin/a-controls-b.webp' },
+  'b-controls-a': { label: '카페인', emoji: '☕', color: '#fb923c', image: '/gwiin/b-controls-a.webp' },
+  'same': { label: '평행이론', emoji: '🪞', color: '#60a5fa', image: '/gwiin/same.webp' },
+  'neutral': { label: '잔잔케미', emoji: '💧', color: '#9ca3af', image: '/gwiin/neutral.webp' },
 };
 
 /**
