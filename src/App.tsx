@@ -3366,6 +3366,20 @@ export default function App() {
         {/* ── 결과 화면 ───────────────────────────── */}
         {step === 'result' && result && (
           <div className="animate-fade-in space-y-6" style={{ paddingTop: 32 }}>
+            {/* 🔮 탄생 포스터 — 오행 기운이 소용돌이치며 캐릭터가 형체를 갖추는 극적인 리빌 장면.
+                일간 오행(dayStemElement)에 맞는 포스터를 보여줌(미드저니 제작, public/gwiin/poster/). */}
+            <div className="animate-slide-up" style={{ textAlign: 'center' }}>
+              <img
+                src={`/gwiin/poster/${result.sajuResult.dayStemElement}.webp`}
+                alt={`${result.formData.name}님의 나풀이 탄생 포스터`}
+                style={{ width: '100%', maxWidth: 320, borderRadius: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+                loading="eager"
+              />
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 10 }}>
+                🔮 {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko} 기운의 나풀이가 찾아왔어요
+              </div>
+            </div>
+
             {/* 프로필 배너 */}
             <div className="profile-banner animate-slide-up">
               <div className="flex items-center gap-3">
