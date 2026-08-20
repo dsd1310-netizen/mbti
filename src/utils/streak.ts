@@ -26,6 +26,8 @@ export interface StreakTier {
   accentDark: string;  // 카드 메달리온 어두운 색(그라디언트 하단)
   glow: string;        // 카드 메달리온 글로우 색(rgba)
   sparkle: number;     // 0~4, 높을수록 카드 장식(반짝임 개수)이 화려해짐
+  /** 나풀이 성장 단계 일러스트(public/gwiin/growth/lv1~4.webp) — 4단계뿐이라 상위 2개 티어는 lv4 공유 */
+  growthImage: string;
 }
 
 export interface EarnedTier {
@@ -36,11 +38,11 @@ export interface EarnedTier {
 // 우주/별자리 테마와 어울리는 이름 + "게임 레어도"처럼 초록→주황→파랑→보라→시안 순으로
 // 색과 화려함이 단계적으로 진해지도록 구성(사용자 확정 방향).
 export const STREAK_TIERS: StreakTier[] = [
-  { days: 3, label: '새싹', emoji: '🌱', accent: '#4ade80', accentDark: '#166534', glow: 'rgba(74, 222, 128, 0.5)', sparkle: 0 },
-  { days: 7, label: '불꽃', emoji: '🔥', accent: '#fb923c', accentDark: '#9a3412', glow: 'rgba(251, 146, 60, 0.5)', sparkle: 1 },
-  { days: 14, label: '별빛', emoji: '⭐', accent: '#60a5fa', accentDark: '#1e40af', glow: 'rgba(96, 165, 250, 0.55)', sparkle: 2 },
-  { days: 30, label: '나풀이 마스터', emoji: '👑', accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.6)', sparkle: 3 },
-  { days: 100, label: '다이아몬드', emoji: '💎', accent: '#67e8f9', accentDark: '#155e75', glow: 'rgba(103, 232, 249, 0.65)', sparkle: 4 },
+  { days: 3, label: '새싹', emoji: '🌱', accent: '#4ade80', accentDark: '#166534', glow: 'rgba(74, 222, 128, 0.5)', sparkle: 0, growthImage: '/gwiin/growth/lv1.webp' },
+  { days: 7, label: '불꽃', emoji: '🔥', accent: '#fb923c', accentDark: '#9a3412', glow: 'rgba(251, 146, 60, 0.5)', sparkle: 1, growthImage: '/gwiin/growth/lv2.webp' },
+  { days: 14, label: '별빛', emoji: '⭐', accent: '#60a5fa', accentDark: '#1e40af', glow: 'rgba(96, 165, 250, 0.55)', sparkle: 2, growthImage: '/gwiin/growth/lv3.webp' },
+  { days: 30, label: '나풀이 마스터', emoji: '👑', accent: '#a78bfa', accentDark: '#4c1d95', glow: 'rgba(167, 139, 250, 0.6)', sparkle: 3, growthImage: '/gwiin/growth/lv4.webp' },
+  { days: 100, label: '다이아몬드', emoji: '💎', accent: '#67e8f9', accentDark: '#155e75', glow: 'rgba(103, 232, 249, 0.65)', sparkle: 4, growthImage: '/gwiin/growth/lv4.webp' },
 ];
 
 /** 지금 streakCount로 얻을 수 있는 가장 높은 티어(없으면 null) — 프로필 배너 상시 표시용. */

@@ -1596,6 +1596,9 @@ export default function App() {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('캔버스를 생성할 수 없습니다.');
 
+      // MBTI 유형별 나풀이 캐릭터 일러스트(미드저니 제작) — 실패 시 기존 이모지 배지로 조용히 대체
+      const mbtiCharacterImage = await loadCanvasImage(`/gwiin/mbti/${result.formData.mbti.toLowerCase()}.webp`).catch(() => null);
+
       // 배경 그라데이션
       const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
       bgGrad.addColorStop(0, '#1a0b2e');
@@ -1653,7 +1656,7 @@ export default function App() {
       ctx.font = `800 66px ${fontStack}`;
       ctx.fillText(`${result.formData.name} · ${result.formData.mbti}`, W / 2, 290);
 
-      // MBTI 유형 이모지 원형 배지
+      // MBTI 유형 캐릭터 원형 배지 — 이미지 로드 성공 시 나풀이 캐릭터, 실패 시 기존 이모지로 대체
       const badgeCx = W / 2;
       const badgeCy = 445;
       const badgeR = 92;
@@ -1669,8 +1672,17 @@ export default function App() {
       ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      ctx.font = `400 88px ${fontStack}`;
-      ctx.fillText(MBTI_DATA[result.formData.mbti]?.emoji ?? '✨', badgeCx, badgeCy + 32);
+      if (mbtiCharacterImage) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(badgeCx, badgeCy, badgeR - 4, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(mbtiCharacterImage, badgeCx - (badgeR - 4), badgeCy - (badgeR - 4), (badgeR - 4) * 2, (badgeR - 4) * 2);
+        ctx.restore();
+      } else {
+        ctx.font = `400 88px ${fontStack}`;
+        ctx.fillText(MBTI_DATA[result.formData.mbti]?.emoji ?? '✨', badgeCx, badgeCy + 32);
+      }
 
       // 일주(日柱) 한자 — 사주 정체성 대표 표기
       ctx.fillStyle = '#f5c842';
@@ -5093,9 +5105,15 @@ export default function App() {
                         border: `1px solid ${earned ? `${tier.accent}55` : 'var(--border)'}`,
                       }}
                     >
-                      <div style={{ fontSize: 32, marginBottom: 6, filter: earned ? 'none' : 'grayscale(1)', opacity: earned ? 1 : 0.4 }}>
-                        {earned ? tier.emoji : '🔒'}
-                      </div>
+                      {earned ? (
+                        <img
+                          src={tier.growthImage}
+                          alt={tier.label}
+                          style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: 4 }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 32, marginBottom: 6, opacity: 0.4 }}>🔒</div>
+                      )}
                       <div style={{ fontSize: 12, fontWeight: 700, color: earned ? tier.accent : 'var(--text-secondary)' }}>
                         {tier.label}
                       </div>
