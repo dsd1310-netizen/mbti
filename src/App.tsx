@@ -5045,7 +5045,11 @@ export default function App() {
                                   style={{ '--accent': '#8b5cf6', '--accent-dark': '#4c1d95', '--accent-glow': 'rgba(139, 92, 246, 0.45)', '--accent-text': 'var(--purple-light)' } as React.CSSProperties}
                                 >
                                   <div className="persona-card-medallion">
-                                    <span className="persona-card-emoji">{figure.emoji}</span>
+                                    <img
+                                      src={`/gwiin/archetype/${figure.id}.webp`}
+                                      alt={figure.name}
+                                      className="persona-card-medallion-img"
+                                    />
                                   </div>
                                   <div className="persona-card-name">{figure.name}</div>
                                   <div className="persona-card-divider" />

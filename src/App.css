@@ -476,6 +476,14 @@ body {
   line-height: 1;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
 }
+/* [2026-08-21] 닮은 인물 24종 초상화 — 원형 메달리온에 이모지 대신 실제 캐릭터 얼굴을 채움 */
+.persona-card-medallion-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
 /* [2026-08-07] 오늘의 타로 전용 — 이모지 원형 배지 대신 실제 카드 스캔 이미지(퍼블릭 도메인
    1909 라이더-웨이트 덱, public/tarot/{id}.webp)를 세로 카드 비율 그대로 보여줌. */
 .persona-card-image {
