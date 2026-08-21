@@ -54,7 +54,7 @@ import {
   elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
   unseDeepCacheKey, elementSummaryDeepCacheKey, compatSummaryDeepCacheKey, isStaleDeepFallbackText,
   pillarCacheKey, astrologyCacheKey, astrologyDeepCacheKey, astroPlacementCacheKey, todayDateStr, tarotCardTheme,
-  dailyFortuneCacheKey, transitCacheKey, tarotCacheKey, pairCompatCacheKey,
+  dailyFortuneCacheKey, transitCacheKey, tarotCacheKey, pairCompatCacheKey, roomVariantCacheKey,
   PairCompatHistoryEntry, getPairCompatHistory, addPairCompatHistoryEntry,
   chatCacheKey, CHAT_DISPLAY_LIMIT, CHAT_CONTEXT_TURNS, archetypeCacheKey,
   setCachedItem, GEMINI_API_KEY,
@@ -193,6 +193,9 @@ export default function App() {
   const [pairCompatText, setPairCompatText] = useState<string | null>(null);
   const [pairCompatLoading, setPairCompatLoading] = useState(false);
   const [pairCompatHistory, setPairCompatHistory] = useState<PairCompatHistoryEntry[]>([]);
+  // 🏠 나풀이의 방 — 오행별로 4종씩 있는 방 중 사람별로 선택한 것(1~4)을 기억.
+  // 하우징 모드 확장을 염두에 두고 사람별 로컬 저장 컨벤션(roomVariantCacheKey)을 먼저 맞춰둠.
+  const [roomVariant, setRoomVariant] = useState(1);
   // 💑 궁합 초대 링크로 들어온 경우 — 링크를 보낸 사람의 정보(URL ?invite= 파라미터에서 디코딩).
   // 내 정보를 입력해 결과 화면에 도달하면 자동으로 이 사람과의 정밀 궁합을 보여준다(7-AI 참고).
   const [compatInvite, setCompatInvite] = useState<CompatInvite | null>(null);
@@ -592,6 +595,14 @@ export default function App() {
     const cached = localStorage.getItem(dailyFortuneCacheKey(result.formData, todayDateStr()));
     if (cached) { try { setDailyFortuneData(JSON.parse(cached)); } catch { setDailyFortuneData(null); } }
     else { setDailyFortuneData(null); }
+  }, [result]);
+
+  // 🏠 나풀이의 방 — 사람별로 선택했던 방 변형(1~4) 로드, 없으면 기본 1
+  useEffect(() => {
+    if (!result) { setRoomVariant(1); return; }
+    const cached = localStorage.getItem(roomVariantCacheKey(result.formData));
+    const n = cached ? parseInt(cached, 10) : 1;
+    setRoomVariant(n >= 1 && n <= 4 ? n : 1);
   }, [result]);
 
   // 🔮 오늘의 트랜짓 운세 캐시 로드 (오늘 날짜 기준)
@@ -2750,7 +2761,7 @@ export default function App() {
         <div className="header-inner">
           <div className="header-logo" onClick={handleReset}>
             <div className="logo-icon">
-              <NapuliMark size={26} />
+              <img src="/gwiin/na.webp" alt="나풀이" style={{ width: '85%', height: '85%', objectFit: 'contain' }} />
             </div>
             <span className="logo-text">나풀이</span>
             <span className="logo-badge">사주 × MBTI 정밀 만세력 엔진</span>
@@ -3358,7 +3369,9 @@ export default function App() {
               <div className="orb-ring-1" />
               <div className="orb-ring-2" />
               <div className="orb-ring-3" />
-              <div className="orb-center">🌌</div>
+              <div className="orb-center">
+                <img src="/gwiin/na.webp" alt="나풀이" style={{ width: '90%', height: '90%', objectFit: 'contain' }} />
+              </div>
             </div>
             <div>
               <h2 className="loading-title">사주원국 정밀 연산 중</h2>
@@ -3556,12 +3569,13 @@ export default function App() {
               </div>
             )}
 
-            {/* 결과 화면 대분류 탭 */}
+            {/* 결과 화면 대분류 탭 — 이모지 대신 캐릭터 톤에 맞춘 일러스트 아이콘(미드저니 제작, 얼굴
+                없는 순수 사물로 통일: 크리스탈볼·해돋이·망원경) */}
             <div className="tab-nav section-tab-nav" role="tablist" aria-label="결과 섹션">
               {[
-                { id: 'today', label: '✨ 오늘' },
-                { id: 'saju', label: '🔮 사주' },
-                { id: 'astrology', label: '🪐 별자리' },
+                { id: 'today', label: '오늘', icon: '/gwiin/tabicon/today.webp' },
+                { id: 'saju', label: '사주', icon: '/gwiin/tabicon/saju.webp' },
+                { id: 'astrology', label: '별자리', icon: '/gwiin/tabicon/astrology.webp' },
               ].map(t => (
                 <button
                   key={t.id}
@@ -3571,19 +3585,21 @@ export default function App() {
                   className={`tab-btn ${activeSection === t.id ? 'active' : ''}`}
                   onClick={() => setActiveSection(t.id as any)}
                 >
+                  <img src={t.icon} alt="" aria-hidden="true" style={{ width: 20, height: 20, objectFit: 'contain', verticalAlign: 'middle', marginRight: 4 }} />
                   <span>{t.label}</span>
                 </button>
               ))}
             </div>
 
-            {/* 🔮 사주 대분류 안의 서브탭(운세/해석/궁합/풍수) */}
+            {/* 🔮 사주 대분류 안의 서브탭(운세/해석/궁합/풍수) — 메인 탭과 동일하게 얼굴 없는
+                일러스트 아이콘으로 통일(미드저니 제작) */}
             {activeSection === 'saju' && (
               <div className="tab-nav" role="tablist" aria-label="사주 세부 메뉴" style={{ marginBottom: 20 }}>
                 {[
-                  { id: 'fortune', label: '🌌 운세' },
-                  { id: 'ai', label: '🔍 해석' },
-                  { id: 'compat', label: '💑 궁합' },
-                  { id: 'fengshui', label: '🏡 풍수' },
+                  { id: 'fortune', label: '운세', icon: '/gwiin/tabicon/unse.webp' },
+                  { id: 'ai', label: '해석', icon: '/gwiin/tabicon/interpret.webp' },
+                  { id: 'compat', label: '궁합', icon: '/gwiin/tabicon/compat.webp' },
+                  { id: 'fengshui', label: '풍수', icon: '/gwiin/tabicon/fengshui.webp' },
                 ].map(t => (
                   <button
                     key={t.id}
@@ -3593,6 +3609,7 @@ export default function App() {
                     className={`tab-btn ${activeSajuTab === t.id ? 'active' : ''}`}
                     onClick={() => setActiveSajuTab(t.id as any)}
                   >
+                    <img src={t.icon} alt="" aria-hidden="true" style={{ width: 18, height: 18, objectFit: 'contain', verticalAlign: 'middle', marginRight: 4 }} />
                     <span>{t.label}</span>
                   </button>
                 ))}
@@ -3616,7 +3633,7 @@ export default function App() {
               onClick={() => setStep('room')}
             >
               <img
-                src={`/gwiin/room/${result.sajuResult.dayStemElement}.webp`}
+                src={`/gwiin/room/${result.sajuResult.dayStemElement}-${roomVariant}.webp`}
                 alt="나풀이의 방"
                 style={{ width: 84, height: 84, objectFit: 'cover', flexShrink: 0 }}
               />
@@ -5223,9 +5240,9 @@ export default function App() {
               <button className="btn-secondary" onClick={() => setStep('result')}>← 돌아가기</button>
             </div>
 
-            <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', marginBottom: 20 }}>
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', marginBottom: 12 }}>
               <img
-                src={`/gwiin/room/${result.sajuResult.dayStemElement}.webp`}
+                src={`/gwiin/room/${result.sajuResult.dayStemElement}-${roomVariant}.webp`}
                 alt="나풀이의 방 배경"
                 style={{ width: '100%', display: 'block' }}
               />
@@ -5237,6 +5254,52 @@ export default function App() {
                   width: '28%', maxWidth: 130, filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.5))',
                 }}
               />
+              {/* 🎨 방 꾸미기 — 오행마다 미리 만들어둔 4가지 방 중 선택(하우징 모드로 가기 전
+                  가장 저렴한 "커스터마이징" 단계). 선택은 사람별로 저장됨. */}
+              <button
+                type="button"
+                aria-label="이전 방"
+                onClick={() => {
+                  const next = roomVariant === 1 ? 4 : roomVariant - 1;
+                  setRoomVariant(next);
+                  localStorage.setItem(roomVariantCacheKey(result.formData), String(next));
+                }}
+                style={{
+                  position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                  width: 36, height: 36, borderRadius: '50%', border: 'none',
+                  background: 'rgba(10, 8, 24, 0.55)', color: '#fff', fontSize: 16, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >‹</button>
+              <button
+                type="button"
+                aria-label="다음 방"
+                onClick={() => {
+                  const next = roomVariant === 4 ? 1 : roomVariant + 1;
+                  setRoomVariant(next);
+                  localStorage.setItem(roomVariantCacheKey(result.formData), String(next));
+                }}
+                style={{
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  width: 36, height: 36, borderRadius: '50%', border: 'none',
+                  background: 'rgba(10, 8, 24, 0.55)', color: '#fff', fontSize: 16, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >›</button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
+              {[1, 2, 3, 4].map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  aria-label={`${n}번 방 보기`}
+                  onClick={() => { setRoomVariant(n); localStorage.setItem(roomVariantCacheKey(result.formData), String(n)); }}
+                  style={{
+                    width: 8, height: 8, borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
+                    background: n === roomVariant ? 'var(--gold)' : 'rgba(255,255,255,0.2)',
+                  }}
+                />
+              ))}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>

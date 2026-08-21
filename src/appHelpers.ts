@@ -191,6 +191,11 @@ export function isStaleDeepFallbackText(text: string | null): boolean {
 export function pillarCacheKey(f: CacheKeyBase, key: PillarKey): string {
   return `saju_pillar_${key}_${baseKeyId(f)}`;
 }
+// 나풀이의 방 — 사용자가 고른 방 꾸미기(4종 중 1개, 1~4)를 사람별로 기억.
+// 하우징 모드로 확장될 것을 염두에 두고 사람별 저장 컨벤션(baseKeyId)을 미리 맞춰둠.
+export function roomVariantCacheKey(f: CacheKeyBase): string {
+  return `saju_roomvariant_${baseKeyId(f)}`;
+}
 // 서양점성술은 출생 도시(좌표)에 따라 하우스·어센던트가 달라지므로 baseKeyId에 도시명을 추가로 반영.
 // baseKeyId의 birthBranch는 2시간 단위 시진까지만 구분하지만, 정확한 시:분 입력 시
 // 어센던트는 분 단위로 계속 이동하므로 exactTime을 추가로 반영해 캐시가 섞이지 않게 함.

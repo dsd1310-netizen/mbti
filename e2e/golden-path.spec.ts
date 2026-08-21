@@ -99,12 +99,14 @@ test('결과 화면의 대분류/서브 탭을 전환해도 콘솔 에러 없이
   await page.getByRole('button', { name: /정밀 만세력.*나풀이 분석 시작/ }).click();
   await expect(page.locator('.pillar-grid')).toBeVisible({ timeout: 60000 });
 
-  for (const label of [/✨ 오늘/, /🔮 사주/, /🪐 별자리/]) {
+  // [2026-08-21] 대분류/서브 탭 라벨에서 이모지를 빼고 일러스트 아이콘(이미지)으로 교체함
+  // (계획안.md 7-BL 참고) — 매칭 텍스트를 이모지 없는 새 라벨로 갱신.
+  for (const label of [/오늘/, /사주/, /별자리/]) {
     await page.getByRole('tab', { name: label }).click();
   }
 
-  await page.getByRole('tab', { name: /🔮 사주/ }).click();
-  for (const label of [/🌌 운세/, /🔍 해석/, /💑 궁합/, /🏡 풍수/]) {
+  await page.getByRole('tab', { name: /사주/ }).click();
+  for (const label of [/운세/, /해석/, /궁합/, /풍수/]) {
     await page.getByRole('tab', { name: label }).click();
   }
 
