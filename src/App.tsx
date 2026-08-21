@@ -196,6 +196,9 @@ export default function App() {
   // 🏠 나풀이의 방 — 오행별로 4종씩 있는 방 중 사람별로 선택한 것(1~4)을 기억.
   // 하우징 모드 확장을 염두에 두고 사람별 로컬 저장 컨벤션(roomVariantCacheKey)을 먼저 맞춰둠.
   const [roomVariant, setRoomVariant] = useState(1);
+  // "오늘" 탭 안에 있어 발견성이 낮다는 피드백으로, 프로필 배너 옆 아이콘 버튼 + 팝업(모달)
+  // 형태로 변경(2026-08-21, 계획안.md 7-BM 참고) — 어느 탭에 있든 항상 보임.
+  const [showRoomModal, setShowRoomModal] = useState(false);
   // 💑 궁합 초대 링크로 들어온 경우 — 링크를 보낸 사람의 정보(URL ?invite= 파라미터에서 디코딩).
   // 내 정보를 입력해 결과 화면에 도달하면 자동으로 이 사람과의 정밀 궁합을 보여준다(7-AI 참고).
   const [compatInvite, setCompatInvite] = useState<CompatInvite | null>(null);
@@ -3157,6 +3160,11 @@ export default function App() {
             )}
             {/* 히어로 */}
             <div className="hero">
+              <img
+                src="/gwiin/na.webp"
+                alt="나풀이"
+                style={{ width: 96, height: 96, objectFit: 'contain', margin: '0 auto 12px', filter: 'drop-shadow(0 6px 18px rgba(139, 92, 246, 0.45))' }}
+              />
               <div className="hero-badge">
                 <span className="hero-badge-dot" />
                 정밀 만세력 알고리즘 × 나풀이 융합
@@ -3411,6 +3419,25 @@ export default function App() {
                 <div className="profile-avatar">
                   {result.formData.name[0] || '?'}
                 </div>
+                {/* 🏠 나풀이의 방 — 어느 탭에 있든 항상 보이는 자리(프로필 배너)에 작은 아이콘
+                    버튼으로 배치, 누르면 팝업(모달)으로 바로 열림 */}
+                <button
+                  type="button"
+                  onClick={() => setShowRoomModal(true)}
+                  aria-label="나풀이의 방 보기"
+                  title="나풀이의 방"
+                  style={{
+                    width: 56, height: 56, borderRadius: 16, flexShrink: 0, padding: 0,
+                    border: '1px solid rgba(245, 200, 66, 0.4)', overflow: 'hidden', cursor: 'pointer',
+                    boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                  }}
+                >
+                  <img
+                    src={`/gwiin/room/${result.sajuResult.dayStemElement}-${roomVariant}.webp`}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </button>
                 <div className="profile-info">
                   <div className="profile-badge-row">
                     <span className="profile-mbti-badge">{result.formData.mbti}</span>
@@ -3619,32 +3646,6 @@ export default function App() {
             {/* ✨ 오늘: 오늘의 나풀이 + 오늘의 타로 + 오늘의 트랜짓 — 매일 새로 보는 콘텐츠 3종을 한곳에 모음 */}
             {activeSection === 'today' && (
             <div className="space-y-6 animate-fade-in">
-
-            {/* 🏠 나풀이의 방 진입 카드 — 오행별 배경(public/gwiin/room)에 캐릭터가 사는 나만의 공간.
-                헤더는 이미 버튼 3개(가이드/다이어리/다시하기)로 꽉 차 있어(모바일 375px 기준) 새 버튼을
-                추가하지 않고, "오늘 = 매일 들르는 곳"이라는 기존 구조에 자연스럽게 편입시킴. */}
-            <button
-              type="button"
-              className="glass-card"
-              style={{
-                width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, overflow: 'hidden',
-                display: 'flex', alignItems: 'center', gap: 14,
-              }}
-              onClick={() => setStep('room')}
-            >
-              <img
-                src={`/gwiin/room/${result.sajuResult.dayStemElement}-${roomVariant}.webp`}
-                alt="나풀이의 방"
-                style={{ width: 84, height: 84, objectFit: 'cover', flexShrink: 0 }}
-              />
-              <div style={{ flex: 1, padding: '14px 14px 14px 0' }}>
-                <div className="section-label">🏠 나풀이의 방</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {result.formData.name}님의 나풀이가 사는 공간을 구경해보세요
-                </div>
-              </div>
-              <span style={{ fontSize: 14, color: 'var(--gold)', paddingRight: 16, flexShrink: 0 }}>→</span>
-            </button>
 
             {/* 매일 알림 (네이티브 앱 전용) */}
             {isNativePlatform() && (
@@ -5229,16 +5230,17 @@ export default function App() {
 
         {/* 🏠 나풀이의 방 — 캐릭터 에셋 마지막 통합 지점. 새 상태/계산 없이 이미 앱에 있는 값들
             (오늘의 기운·배지·다이어리 기록·귀인지도 상대 수)을 한 화면에 모아 보여주는 정적 요약 화면.
-            아이템 배치 등 상호작용 시스템은 범위 밖(계획안.md 참고). */}
-        {step === 'room' && result && (
-          <div className="animate-fade-in" style={{ paddingTop: 32 }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-              <div>
+            아이템 배치 등 상호작용 시스템은 범위 밖(계획안.md 참고).
+            [2026-08-21] "오늘" 탭 안에 있어 발견성이 낮다는 피드백으로 전체 화면(step)에서
+            프로필 배너 옆 아이콘 버튼 + 팝업(모달)으로 전환(7-BM) — 어느 탭에 있든 열 수 있음. */}
+        {showRoomModal && result && (
+          <div className="modal-overlay" onClick={() => setShowRoomModal(false)}>
+            <div className="modal-box" role="dialog" aria-modal="true" aria-label="나풀이의 방" onClick={e => e.stopPropagation()}>
+              <button className="modal-close" aria-label="닫기" onClick={() => setShowRoomModal(false)}>✕</button>
+              <div style={{ marginBottom: 16 }}>
                 <div className="section-label">🏠 {ELEMENT_LABELS[result.sajuResult.dayStemElement].emoji} {ELEMENT_LABELS[result.sajuResult.dayStemElement].ko} 나풀이의 방</div>
                 <div className="section-title">{result.formData.name}님의 공간</div>
               </div>
-              <button className="btn-secondary" onClick={() => setStep('result')}>← 돌아가기</button>
-            </div>
 
             <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', marginBottom: 12 }}>
               <img
@@ -5330,6 +5332,7 @@ export default function App() {
                   {pairCompatHistory.length}명
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>귀인지도에서 만남</div>
+              </div>
               </div>
             </div>
           </div>

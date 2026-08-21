@@ -36,7 +36,7 @@ export interface Bookmark {
   date: string;
   snapshot?: FormData; // 저장 당시의 입력값 — 전체 결과 화면으로 되돌아갈 때 사용
 }
-export type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks' | 'room';
+export type Step = 'onboarding' | 'input' | 'loading' | 'result' | 'bookmarks';
 
 export const ONBOARDING_SEEN_KEY = 'napuli_onboarding_seen';
 // 결과 화면 최초 진입 시 1회만 보여주는 "어디부터 볼지" 안내 배너 — 온보딩 진입점 과다 문제(계획안.md 참고) 완화용.
