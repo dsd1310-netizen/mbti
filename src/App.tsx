@@ -3553,15 +3553,19 @@ export default function App() {
                   aria-label="나풀이의 방 보기"
                   title="나풀이의 방"
                   style={{
-                    width: 56, height: 56, borderRadius: 16, flexShrink: 0, padding: 0,
+                    width: 56, height: 56, borderRadius: 16, flexShrink: 0, padding: 6,
                     border: '1px solid rgba(245, 200, 66, 0.4)', overflow: 'hidden', cursor: 'pointer',
                     boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                    background: 'linear-gradient(135deg, #6d28d9, #4f46e5, #be185d)',
                   }}
                 >
+                  {/* [2026-08-22] 헤더 로고와 나란히 보이는 자리라 정교한 일러스트(방 배경)
+                      대신 헤더와 같은 플랫 마스코트로 통일 — 그림체가 붙어있어 어색하다는
+                      피드백 반영(계획안.md 참고). 실제 방 미리보기는 모달을 열면 보임. */}
                   <img
-                    src={`/gwiin/room/${result.sajuResult.dayStemElement}-${roomVariant}.webp`}
+                    src="/gwiin/na.webp"
                     alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                 </button>
                 <div className="profile-info">
@@ -3815,11 +3819,17 @@ export default function App() {
             <div className="glass-card-gold" style={{ padding: '20px 22px' }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {/* 결과 화면 상단 탄생 포스터와 같은 오행 캐릭터 — "같은 나풀이가 매일 말을 걸어준다"는 느낌 */}
+                  {/* [2026-08-22] 헤더 로고와 가까운 자리라 오행 일러스트 대신 헤더와 같은
+                      플랫 마스코트로 통일(그림체가 붙어있어 어색하다는 피드백 반영) —
+                      "같은 나풀이가 매일 말을 걸어준다"는 느낌은 유지. */}
                   <img
-                    src={`/gwiin/element/${result.sajuResult.dayStemElement}.webp`}
+                    src="/gwiin/na.webp"
                     alt="나풀이"
-                    style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid rgba(245, 200, 66, 0.4)', flexShrink: 0 }}
+                    style={{
+                      width: 40, height: 40, borderRadius: '50%', flexShrink: 0, padding: 4, boxSizing: 'border-box',
+                      border: '1px solid rgba(245, 200, 66, 0.4)',
+                      background: 'linear-gradient(135deg, #6d28d9, #4f46e5, #be185d)',
+                    }}
                   />
                   <div>
                     <div className="section-label">🌅 오늘의 나풀이</div>
