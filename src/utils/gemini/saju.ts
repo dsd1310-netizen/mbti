@@ -4,7 +4,8 @@
  * 심화해석(3배 분량) 버전은 ./deep.ts, 서양점성술/오늘의 트랜짓·타로는 ./astrology.ts 참고.
  */
 
-import { ElementCounts, SajuResult } from '../sajuCalculator';
+import { ElementCounts, SajuResult, SipsinProfile, GyeokgukResult } from '../sajuCalculator';
+import { GYEOKGUK_INFO } from '../../data/gyeokguk';
 import { PairCompatibilityResult, STEM_RELATION_LABEL } from '../pairCompatibility';
 import {
   ELEMENT_KO, elementCountsStr, cleanField,
@@ -364,6 +365,68 @@ export async function generateElementSummaryInterpretation(
     apiKey,
     prompt,
     '오행이 골고루 조화를 이루고 있어 안정적인 기운을 가지고 있습니다. 강점을 살리고 부족한 기운은 색상이나 방위로 보완해보세요.'
+  );
+}
+
+/**
+ * 십신(十神) 분포 종합 해설 — 개별 십신 설명이 아닌, 전체 분포를 종합한 맞춤 해설
+ */
+export async function generateSipsinSummaryInterpretation(
+  apiKey: string,
+  name: string,
+  sipsin: SipsinProfile,
+): Promise<string> {
+  const countsStr = Object.entries(sipsin.counts)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k} ${v}개`)
+    .join(', ');
+
+  const prompt = `당신은 명리학 십신(十神) 전문가입니다.
+아래 사용자의 십신(十神) 분포 전체를 종합해서, 사주 비전공자도 이해할 수 있는 [십신 종합 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 십신 분포: ${countsStr}
+
+【 작성 지침 】
+1. 10개 십신을 하나씩 개별로 나열하지 말고, 가장 많이 드러난 십신 1~2개를 중심으로 이 사람의 기질과 관계 맺는 방식을 하나의 이야기로 종합해서 설명하세요.
+2. 십신 전문 용어(비겁/식상/재성/관성/인성 같은 분류어) 대신 일상적인 비유를 사용하세요.
+3. 6~8줄 분량의 친근한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '다양한 십신이 고르게 어우러져 있어 여러 상황에 유연하게 대응하는 기질을 가지고 있습니다.'
+  );
+}
+
+/**
+ * 격국(格局) 해설 — 사주원국 카드의 "당신은 OO격입니다" 헤드라인 뒤에 이어지는 풀이
+ */
+export async function generateGyeokgukInterpretation(
+  apiKey: string,
+  name: string,
+  gyeokguk: GyeokgukResult,
+): Promise<string> {
+  const info = GYEOKGUK_INFO[gyeokguk.name];
+
+  const prompt = `당신은 명리학 격국(格局) 전문가입니다.
+아래 사용자의 격국을 바탕으로, 사주 비전공자도 이해할 수 있는 [격국 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 격국: ${gyeokguk.name} (${info.desc})
+
+【 작성 지침 】
+1. "${gyeokguk.name}"이라는 사주의 기본 유형이 이 사람의 타고난 삶의 방식(일하는 방식, 사람을 대하는 태도, 인생에서 반복되는 패턴)에 어떻게 드러나는지 설명하세요.
+2. 격국 판별 원리(월지·투출 등) 같은 계산 과정은 언급하지 말고, 결과로 나온 성격/기질 해석에만 집중하세요.
+3. 한자 용어 나열 없이 일상적인 비유를 사용하고, 6~8줄 분량의 친근한 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(
+    apiKey,
+    prompt,
+    '자신만의 방식으로 삶을 꾸려나가는 힘을 갖추고 있습니다. 스스로의 속도를 믿고 나아가면 좋은 결과로 이어질 거예요.'
   );
 }
 

@@ -10,12 +10,16 @@ import {
   generateFortuneInterpretation,
   generateDailyFortune, DailyFortune,
   generateElementSummaryInterpretation,
+  generateSipsinSummaryInterpretation,
+  generateGyeokgukInterpretation,
   generateCompatibilitySummaryInterpretation,
   generatePillarInterpretation,
   generateCategoryDeepInterpretation,
   generateFengShuiDeepInterpretation,
   generateFortuneDeepInterpretation,
   generateElementSummaryDeepInterpretation,
+  generateSipsinSummaryDeepInterpretation,
+  generateGyeokgukDeepInterpretation,
   generateCompatibilitySummaryDeepInterpretation,
   generateAstrologyInterpretation, generateAstrologyDeepInterpretation, AstrologyInterpretation,
   generatePlanetPlacementInterpretation, generateHousePlacementInterpretation,
@@ -56,6 +60,7 @@ import {
   fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
   elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
   unseDeepCacheKey, elementSummaryDeepCacheKey, compatSummaryDeepCacheKey, isStaleDeepFallbackText,
+  sipsinSummaryCacheKey, sipsinSummaryDeepCacheKey, gyeokgukSummaryCacheKey, gyeokgukSummaryDeepCacheKey,
   pillarCacheKey, astrologyCacheKey, astrologyDeepCacheKey, astroPlacementCacheKey, todayDateStr, tarotCardTheme,
   dailyFortuneCacheKey, transitCacheKey, tarotCacheKey, pairCompatCacheKey, roomVariantCacheKey,
   PairCompatHistoryEntry, getPairCompatHistory, addPairCompatHistoryEntry,
@@ -150,6 +155,10 @@ export default function App() {
   const [unseLoading, setUnseLoading] = useState(false);
   const [elementSummaryText, setElementSummaryText] = useState<string | null>(null);
   const [elementSummaryLoading, setElementSummaryLoading] = useState(false);
+  const [sipsinSummaryText, setSipsinSummaryText] = useState<string | null>(null);
+  const [sipsinSummaryLoading, setSipsinSummaryLoading] = useState(false);
+  const [gyeokgukSummaryText, setGyeokgukSummaryText] = useState<string | null>(null);
+  const [gyeokgukSummaryLoading, setGyeokgukSummaryLoading] = useState(false);
   const [compatSummaryText, setCompatSummaryText] = useState<string | null>(null);
   const [compatSummaryLoading, setCompatSummaryLoading] = useState(false);
   const [dailyFortuneData, setDailyFortuneData] = useState<DailyFortune | null>(null);
@@ -165,6 +174,10 @@ export default function App() {
   const [unseDeepLoading, setUnseDeepLoading] = useState(false);
   const [elementSummaryDeepText, setElementSummaryDeepText] = useState<string | null>(null);
   const [elementSummaryDeepLoading, setElementSummaryDeepLoading] = useState(false);
+  const [sipsinSummaryDeepText, setSipsinSummaryDeepText] = useState<string | null>(null);
+  const [sipsinSummaryDeepLoading, setSipsinSummaryDeepLoading] = useState(false);
+  const [gyeokgukSummaryDeepText, setGyeokgukSummaryDeepText] = useState<string | null>(null);
+  const [gyeokgukSummaryDeepLoading, setGyeokgukSummaryDeepLoading] = useState(false);
   const [compatSummaryDeepText, setCompatSummaryDeepText] = useState<string | null>(null);
   const [compatSummaryDeepLoading, setCompatSummaryDeepLoading] = useState(false);
 
@@ -577,13 +590,21 @@ export default function App() {
     else { setChatMessages([]); }
   }, [result]);
 
-  // 오행/궁합 종합 해설 캐시 로드
+  // 오행/십신/격국/궁합 종합 해설 캐시 로드
   useEffect(() => {
-    if (!result) { setElementSummaryText(null); setCompatSummaryText(null); setElementSummaryDeepText(null); setCompatSummaryDeepText(null); return; }
+    if (!result) {
+      setElementSummaryText(null); setCompatSummaryText(null); setElementSummaryDeepText(null); setCompatSummaryDeepText(null);
+      setSipsinSummaryText(null); setSipsinSummaryDeepText(null); setGyeokgukSummaryText(null); setGyeokgukSummaryDeepText(null);
+      return;
+    }
     setElementSummaryText(localStorage.getItem(elementSummaryCacheKey(result.formData)));
     setCompatSummaryText(localStorage.getItem(compatSummaryCacheKey(result.formData)));
     setElementSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(elementSummaryDeepCacheKey(result.formData))));
     setCompatSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(compatSummaryDeepCacheKey(result.formData))));
+    setSipsinSummaryText(localStorage.getItem(sipsinSummaryCacheKey(result.formData)));
+    setGyeokgukSummaryText(localStorage.getItem(gyeokgukSummaryCacheKey(result.formData)));
+    setSipsinSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(sipsinSummaryDeepCacheKey(result.formData))));
+    setGyeokgukSummaryDeepText((v => isStaleDeepFallbackText(v) ? null : v)(localStorage.getItem(gyeokgukSummaryDeepCacheKey(result.formData))));
   }, [result]);
 
   // 🪐 별자리(서양점성술) AI 해설 캐시 로드
@@ -1009,6 +1030,96 @@ export default function App() {
       return null;
     } finally {
       setElementSummaryDeepLoading(false);
+    }
+  };
+
+  // 십신 종합 해설 AI 생성
+  const handleGenerateSipsinSummary = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setSipsinSummaryLoading(true);
+    try {
+      const text = await generateSipsinSummaryInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult.sipsin);
+      setSipsinSummaryText(text);
+      setCachedItem(sipsinSummaryCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'sipsin_summary' });
+      return text;
+    } catch (err: any) {
+      showToast(`십신 종합 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setSipsinSummaryLoading(false);
+    }
+  };
+
+  // 십신 종합 심화해석(🔍 더보기) 생성
+  const handleGenerateSipsinSummaryDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    if (!(await ensureCreditForDeepGeneration())) return null;
+    setSipsinSummaryDeepLoading(true);
+    try {
+      const text = await generateSipsinSummaryDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult);
+      setSipsinSummaryDeepText(text);
+      setCachedItem(sipsinSummaryDeepCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'sipsin_summary_deep' });
+      return text;
+    } catch (err: any) {
+      showToast(`십신 종합 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setSipsinSummaryDeepLoading(false);
+    }
+  };
+
+  // 격국 해설 AI 생성
+  const handleGenerateGyeokgukSummary = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    setGyeokgukSummaryLoading(true);
+    try {
+      const text = await generateGyeokgukInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult.gyeokguk);
+      setGyeokgukSummaryText(text);
+      setCachedItem(gyeokgukSummaryCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'gyeokguk_summary' });
+      return text;
+    } catch (err: any) {
+      showToast(`격국 해설 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setGyeokgukSummaryLoading(false);
+    }
+  };
+
+  // 격국 심화해석(🔍 더보기) 생성
+  const handleGenerateGyeokgukSummaryDeep = async (): Promise<string | null> => {
+    if (!result) return null;
+    if (!GEMINI_API_KEY) {
+      showToast('나풀이 해석 기능이 현재 비활성화되어 있습니다. 잠시 후 다시 시도해 주세요.');
+      return null;
+    }
+    if (!(await ensureCreditForDeepGeneration())) return null;
+    setGyeokgukSummaryDeepLoading(true);
+    try {
+      const text = await generateGyeokgukDeepInterpretation(GEMINI_API_KEY, result.formData.name, result.sajuResult);
+      setGyeokgukSummaryDeepText(text);
+      setCachedItem(gyeokgukSummaryDeepCacheKey(result.formData), text);
+      trackEvent('content_generate', { feature: 'gyeokguk_summary_deep' });
+      return text;
+    } catch (err: any) {
+      showToast(`격국 심화해석 생성 실패: ${err?.message ?? '알 수 없는 오류'}`);
+      return null;
+    } finally {
+      setGyeokgukSummaryDeepLoading(false);
     }
   };
 
@@ -4036,6 +4147,128 @@ export default function App() {
                 </div>
               ) : (
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>이번 사주 8글자엔 해당하는 신살이 없어요.</p>
+              )}
+            </div>
+
+            {/* 격국(格局) 해설 (AI) */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div>
+                  <div className="section-label">🎴 나풀이 격국 해설</div>
+                  <div className="section-title">{result.sajuResult.gyeokguk.name}, 어떤 의미일까요?</div>
+                </div>
+                {gyeokgukSummaryText && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('격국 해설', `${result.formData.name}님의 격국(${result.sajuResult.gyeokguk.name}) 해설`, gyeokgukSummaryText)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+              {gyeokgukSummaryText ? (
+                <>
+                  <div className="deep-analysis-text">{gyeokgukSummaryText}</div>
+                  <button
+                    className="btn-secondary"
+                    style={{ marginTop: 12, fontSize: 12 }}
+                    onClick={handleGenerateGyeokgukSummary}
+                    disabled={gyeokgukSummaryLoading}
+                  >
+                    {gyeokgukSummaryLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
+                  </button>
+
+                  {gyeokgukSummaryDeepText ? (
+                    <div className="deep-dive-block">
+                      <div className="deep-dive-block-header">
+                        <div className="deep-dive-label">🔍 심화해석</div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 11 }}
+                          onClick={() => addBookmark('격국 심화 해설', `${result.formData.name}님의 격국(${result.sajuResult.gyeokguk.name}) 심화 해설`, gyeokgukSummaryDeepText)}
+                        >
+                          🔖 저장
+                        </button>
+                      </div>
+                      <div className="deep-analysis-text">{gyeokgukSummaryDeepText}</div>
+                    </div>
+                  ) : (
+                    <button className="btn-deep-dive" onClick={handleGenerateGyeokgukSummaryDeep} disabled={gyeokgukSummaryDeepLoading}>
+                      {gyeokgukSummaryDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    사주의 기본 유형인 격국이 당신의 일하는 방식과 삶의 패턴에 어떻게 드러나는지, 나풀이가 풀어드려요.
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateGyeokgukSummary} disabled={gyeokgukSummaryLoading}>
+                    {gyeokgukSummaryLoading ? <span>✨ 생성 중...</span> : <span>🎴 격국 해설 생성하기</span>}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 십신 종합 해설 (AI) */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div>
+                  <div className="section-label">🔟 나풀이 십신 종합 해설</div>
+                  <div className="section-title">십신 전체를 하나로 풀어보면</div>
+                </div>
+                {sipsinSummaryText && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: 11 }}
+                    onClick={() => addBookmark('십신 종합 해설', `${result.formData.name}님의 십신 종합 해설`, sipsinSummaryText)}
+                  >
+                    🔖 저장
+                  </button>
+                )}
+              </div>
+              {sipsinSummaryText ? (
+                <>
+                  <div className="deep-analysis-text">{sipsinSummaryText}</div>
+                  <button
+                    className="btn-secondary"
+                    style={{ marginTop: 12, fontSize: 12 }}
+                    onClick={handleGenerateSipsinSummary}
+                    disabled={sipsinSummaryLoading}
+                  >
+                    {sipsinSummaryLoading ? '다시 생성 중...' : '🔄 다시 생성하기'}
+                  </button>
+
+                  {sipsinSummaryDeepText ? (
+                    <div className="deep-dive-block">
+                      <div className="deep-dive-block-header">
+                        <div className="deep-dive-label">🔍 심화해석</div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: 11 }}
+                          onClick={() => addBookmark('십신 종합 심화 해설', `${result.formData.name}님의 십신 종합 심화 해설`, sipsinSummaryDeepText)}
+                        >
+                          🔖 저장
+                        </button>
+                      </div>
+                      <div className="deep-analysis-text">{sipsinSummaryDeepText}</div>
+                    </div>
+                  ) : (
+                    <button className="btn-deep-dive" onClick={handleGenerateSipsinSummaryDeep} disabled={sipsinSummaryDeepLoading}>
+                      {sipsinSummaryDeepLoading ? '✨ 심화해석 생성 중...' : '🔍 심화해석 더보기'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                    십신 10개 분포를 하나로 종합해서, 나만의 기질과 관계 맺는 방식을 나풀이가 만들어드려요.
+                  </p>
+                  <button className="btn-primary" onClick={handleGenerateSipsinSummary} disabled={sipsinSummaryLoading}>
+                    {sipsinSummaryLoading ? <span>✨ 생성 중...</span> : <span>🔟 십신 종합 해설 생성하기</span>}
+                  </button>
+                </div>
               )}
             </div>
 

@@ -196,6 +196,18 @@ export function elementSummaryDeepCacheKey(f: CacheKeyBase): string {
 export function compatSummaryDeepCacheKey(f: CacheKeyBase): string {
   return `saju_compatsummary_${baseKeyId(f)}_deep`;
 }
+export function sipsinSummaryCacheKey(f: CacheKeyBase): string {
+  return `saju_sipsinsummary_${baseKeyId(f)}`;
+}
+export function sipsinSummaryDeepCacheKey(f: CacheKeyBase): string {
+  return `saju_sipsinsummary_${baseKeyId(f)}_deep`;
+}
+export function gyeokgukSummaryCacheKey(f: CacheKeyBase): string {
+  return `saju_gyeokguksummary_${baseKeyId(f)}`;
+}
+export function gyeokgukSummaryDeepCacheKey(f: CacheKeyBase): string {
+  return `saju_gyeokguksummary_${baseKeyId(f)}_deep`;
+}
 
 // [2026-08-06] 심화해석 계열은 실패 시 폴백 문구("...지금은 불러올 수 없습니다...")가
 // 실제 콘텐츠인 것처럼 캐시되던 버그가 있었음(geminiApi.ts throwOnFailure로 향후 재발은 막음).

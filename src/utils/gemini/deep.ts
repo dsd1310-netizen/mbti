@@ -6,6 +6,7 @@
 import { SajuResult, SipsinProfile, SipsinType } from '../sajuCalculator';
 import { MBTI_DATA } from '../../data/mbtiTypes';
 import { MBTI_DETAILED } from '../../data/mbtiDetailed';
+import { GYEOKGUK_INFO } from '../../data/gyeokguk';
 import { DEEP_MODELS, ELEMENT_KO, elementCountsStr, callGeminiPlainApi, AiCategoryKey } from './core';
 import { CategoryUserAnswer, CompatibilitySummaryInput } from './saju';
 
@@ -235,6 +236,59 @@ export async function generateElementSummaryDeepInterpretation(
 5. 한자 용어 대신 일상적인 비유를 사용하고, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
 
   return callGeminiPlainApi(apiKey, prompt, '오행 종합 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
+}
+
+/**
+ * 십신(十神) 분포 종합 심화 해설 (오행 부가참고 포함, 3배 이상 분량)
+ */
+export async function generateSipsinSummaryDeepInterpretation(
+  apiKey: string,
+  name: string,
+  sajuResult: SajuResult,
+): Promise<string> {
+  const prompt = `당신은 명리학 십신(十神) 전문가입니다.
+아래 사용자의 십신(十神) 분포를 바탕으로, 기존의 짧은 십신 종합 해설보다 3배 이상 풍부한 [십신 종합 심화 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 십신 분포: ${formatSipsinProfile(sajuResult.sipsin, sajuResult.hourUnknown)}
+- 오행 분포(부가참고): ${elementCountsStr(sajuResult.elementCounts)}
+
+【 작성 지침 】
+1. 가장 많이 드러난 십신 1~2개를 중심으로, 이 기운이 일/관계/돈/자기표현 등 삶의 여러 영역에서 각각 어떻게 드러나는지 구체적으로 짚어주세요.
+2. 부족하거나 없는 십신이 있다면 그로 인해 놓치기 쉬운 지점과 보완하는 방법도 짚어주세요.
+3. 오행 분포도 참고하여, 십신과 오행이 서로 어떻게 맞물려 이 사람의 기질을 만드는지 자연스럽게 연결해 설명하세요.
+4. 한자 용어 대신 일상적인 비유를 사용하고, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, '십신 분포 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
+}
+
+/**
+ * 격국(格局) 종합 심화 해설 (십신 부가참고 포함, 3배 이상 분량)
+ */
+export async function generateGyeokgukDeepInterpretation(
+  apiKey: string,
+  name: string,
+  sajuResult: SajuResult,
+): Promise<string> {
+  const { gyeokguk } = sajuResult;
+  const info = GYEOKGUK_INFO[gyeokguk.name];
+  const prompt = `당신은 명리학 격국(格局) 전문가입니다.
+아래 사용자의 격국을 바탕으로, 기존의 짧은 격국 해설보다 3배 이상 풍부한 [격국 심화 해설]을 작성해 주세요.
+
+【 사용자 정보 】
+- 이름: ${name}
+- 격국: ${gyeokguk.name} (${info.desc})
+- 십신 분포(부가참고): ${formatSipsinProfile(sajuResult.sipsin, sajuResult.hourUnknown)}
+
+【 작성 지침 】
+1. "${gyeokguk.name}"이 일하는 방식, 리더십/팔로워십 성향, 돈과 성공을 대하는 태도, 인간관계 패턴까지 여러 영역에서 각각 어떻게 드러나는지 구체적으로 짚어주세요.
+2. 이 격국을 가진 사람이 특히 강점을 발휘할 수 있는 삶의 국면과, 반대로 주의해야 할 함정도 함께 짚어주세요.
+3. 십신 분포도 참고하여, 격국과 십신이 서로 어떻게 맞물리는지 자연스럽게 연결해 설명하세요.
+4. 격국 판별 원리(월지·투출 등) 같은 계산 과정은 언급하지 말고, 결과로 나온 성격/기질 해석에만 집중하세요.
+5. 한자 용어 나열 없이 일상적인 비유를 사용하고, 15~20줄 이상의 충분히 긴 존댓말 텍스트로 작성하세요. JSON이나 마크다운 없이 일반 줄바꿈 텍스트로 바로 출력하세요.`;
+
+  return callGeminiPlainApi(apiKey, prompt, '격국 심화 해설을 지금은 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.', 8192, 45000, DEEP_MODELS, true);
 }
 
 /**
