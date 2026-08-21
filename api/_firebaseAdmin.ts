@@ -4,7 +4,7 @@
  */
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { getAuth, type Auth } from 'firebase-admin/auth';
+import type { Auth } from 'firebase-admin/auth';
 
 // [2026-08-06] 이 함수 내부(JSON.parse/cert/initializeApp)가 예전엔 try/catch 없이 호출되어,
 // FIREBASE_SERVICE_ACCOUNT_KEY 환경변수가 설정되어 있지만 값이 조금이라도 잘못되어 있으면
@@ -31,7 +31,15 @@ export function getAdminDb(): Firestore | null {
   return getFirestore(app, 'default');
 }
 
+// [2026-08-22] firebase-admin/auth를 이 파일 최상단에서 정적 import하면, Auth를 전혀
+// 쓰지 않는 api/gemini.ts(→ api/_rateLimit.ts → 이 파일, getAdminDb()만 사용)까지도 그
+// 서브모듈이 물고 오는 jwks-rsa(→ ESM 전용 jose 패키지를 require()하려다 크래시,
+// ERR_REQUIRE_ESM)를 함께 불러와 매 요청마다 FUNCTION_INVOCATION_FAILED로 죽는 실사용
+// 장애가 있었음. Auth가 실제로 필요한 곳(api/_credits.ts)만 이 하위 모듈을 불러오도록
+// require()를 함수 안으로 미뤄, Auth를 안 쓰는 함수는 이 문제를 아예 겪지 않게 함.
 export function getAdminAuth(): Auth | null {
   const app = getAdminApp();
-  return app ? getAuth(app) : null;
+  if (!app) return null;
+  const { getAuth } = require('firebase-admin/auth');
+  return getAuth(app);
 }
