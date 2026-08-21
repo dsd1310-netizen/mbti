@@ -5586,7 +5586,7 @@ export default function App() {
                 alt="나의 나풀이"
                 style={{
                   position: 'absolute', bottom: '6%', left: '50%', transform: 'translateX(-50%)',
-                  width: '28%', maxWidth: 130, filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.5))',
+                  width: '42%', maxWidth: 195, filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.5))',
                 }}
               />
               {/* 🎨 방 꾸미기 — 오행마다 미리 만들어둔 4가지 방 중 선택(하우징 모드로 가기 전
