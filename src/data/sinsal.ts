@@ -24,11 +24,15 @@ export const SINSAL_INFO: Record<SinsalType, { emoji: string; desc: string }> = 
 };
 
 // 삼합 그룹별 도화/역마/화개 지지(고전 공식 "OO견OO위도화" 그대로 반영)
+// [2026-08-21 수정] 화개 값이 그룹 간 뒤바뀌어 있던 버그 수정 — "OO견OO위화개"는 항상 그
+// 삼합 그룹 자신의 고지(墓/庫) 지지를 가리킨다(寅午戌见戌·巳酉丑见丑·申子辰见辰·亥卯未见未,
+// 이미 각 그룹의 branches에 포함된 멤버 중 하나). 기존 값은 1↔4그룹, 2↔3그룹이 서로 맞바뀌어
+// 있었음(예: 인오술의 화개는 술(10)이어야 하는데 미(7)로 잘못 들어가 있었음).
 const SAMHAP_SINSAL_TARGETS: { branches: number[]; dohwa: number; yeokma: number; hwagae: number }[] = [
-  { branches: [2, 6, 10], dohwa: 3, yeokma: 8, hwagae: 7 },   // 인오술 → 묘/신/미
-  { branches: [5, 9, 1], dohwa: 6, yeokma: 11, hwagae: 4 },   // 사유축 → 오/해/진
-  { branches: [8, 0, 4], dohwa: 9, yeokma: 2, hwagae: 1 },    // 신자진 → 유/인/축
-  { branches: [11, 3, 7], dohwa: 0, yeokma: 5, hwagae: 10 },  // 해묘미 → 자/사/술
+  { branches: [2, 6, 10], dohwa: 3, yeokma: 8, hwagae: 10 },  // 인오술 → 묘/신/술
+  { branches: [5, 9, 1], dohwa: 6, yeokma: 11, hwagae: 1 },   // 사유축 → 오/해/축
+  { branches: [8, 0, 4], dohwa: 9, yeokma: 2, hwagae: 4 },    // 신자진 → 유/인/진
+  { branches: [11, 3, 7], dohwa: 0, yeokma: 5, hwagae: 7 },   // 해묘미 → 자/사/미
 ];
 
 // 일간(천간 인덱스) → 양인살 지지. 양간(갑·병·무·경·임)만 해당.
