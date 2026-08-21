@@ -7,6 +7,7 @@ import { FormData, PillarKey } from './appTypes';
 import { AiCategoryKey, CategoryUserAnswer } from './utils/geminiApi';
 import { TarotCard } from './data/tarotCards';
 import { QuestionableCategory } from './data/categoryQuestions';
+import { SipsinType } from './utils/sajuCalculator';
 
 // 클라우드 동기화(Firebase)는 실제로 필요할 때(로그인 여부 확인/로그인 시도)만 동적으로 불러온다.
 // Firebase SDK가 번들 크기를 크게 키우기 때문에(약 260KB→1MB), 로그인 기능을 쓰지 않는
@@ -35,6 +36,21 @@ export const ELEMENT_LABELS: Record<string, { ko: string; emoji: string; cls: st
   earth: { ko: '토(土)', emoji: '⛰️', cls: 'element-earth' },
   metal: { ko: '금(金)', emoji: '💎', cls: 'element-metal' },
   water: { ko: '수(水)', emoji: '🌊', cls: 'element-water' },
+};
+
+// 십신(十神) 분포 화면 표시용 — 계산 로직(SipsinType 판별)은 sajuCalculator.ts에 이미 있고,
+// 여기엔 사용자에게 보여줄 한 줄 설명만 둔다(비전문가도 이해할 수 있도록 순화한 문구).
+export const SIPSIN_INFO: Record<SipsinType, { desc: string }> = {
+  '비견': { desc: '동료·자립심 — 나와 같은 기운, 협력하거나 경쟁하는 관계' },
+  '겁재': { desc: '추진력·경쟁심 — 나와 같은 기운이되 다투기 쉬운 관계' },
+  '식신': { desc: '표현력·낙천성 — 내가 만들어내는 재능과 의식주의 복' },
+  '상관': { desc: '재능·비판정신 — 틀을 깨는 자유분방한 표현력' },
+  '편재': { desc: '사업수완·통 큰 씀씀이 — 활동적으로 굴리는 재물' },
+  '정재': { desc: '성실함·계획성 — 차곡차곡 쌓는 안정적인 재물' },
+  '편관': { desc: '카리스마·승부욕 — 나를 단련시키는 강한 압박(칠살)' },
+  '정관': { desc: '책임감·원칙 — 나를 바르게 이끄는 명예와 규율' },
+  '편인': { desc: '직관력·독창성 — 남다른 감각으로 받아들이는 배움' },
+  '정인': { desc: '학문·포용력 — 나를 도와주는 귀인과 안정적인 배움' },
 };
 
 export const LOADING_MESSAGES = [

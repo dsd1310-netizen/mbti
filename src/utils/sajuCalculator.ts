@@ -7,6 +7,9 @@
  */
 
 import { getMonthBranchIdx, SOLAR_TERMS } from '../data/solarTerms';
+import { getSinsal, SinsalType } from '../data/sinsal';
+import { getJijanggan } from '../data/jijanggan';
+import { WANGJI_BRANCHES, SIPSIN_TO_GYEOKGUK, GyeokgukName } from '../data/gyeokguk';
 
 // ─── 천간(天干) ───────────────────────────────────────────────
 export const HEAVENLY_STEMS = [
@@ -166,6 +169,43 @@ function calcSipsin(
   return { yearStem, yearBranch, monthStem, monthBranch, dayBranch, hourStem, hourBranch, counts };
 }
 
+// ─── 격국(格局) ───────────────────────────────────────────────
+export interface GyeokgukResult {
+  name: GyeokgukName;
+  baseStemIdx: number;
+  sipsin: SipsinType;
+}
+
+/**
+ * 월지(月支) 기준 격국 판별. 왕지(자오묘유)는 정기를 그대로, 생지/고지(그 외 8개)는
+ * 지장간(정기→중기→여기 우선순위)이 연간·월간·시간(일간 제외)에 투출했는지 확인해
+ * 기준 천간을 정한다 — 투출한 게 없으면 정기를 기본값으로 사용.
+ */
+function calcGyeokguk(
+  dayStemIdx: number,
+  yearPillar: Pillar,
+  monthPillar: Pillar,
+  hourPillar: Pillar | null,
+): GyeokgukResult {
+  const dayStem = HEAVENLY_STEMS[dayStemIdx];
+  const monthBranchIdx = monthPillar.branchIdx;
+  const hidden = getJijanggan(monthBranchIdx); // 여기 → (중기?) → 정기 순서
+
+  let baseStemIdx: number;
+  if (WANGJI_BRANCHES.has(monthBranchIdx)) {
+    baseStemIdx = hidden[hidden.length - 1].stemIdx; // 정기
+  } else {
+    const visibleStemIndices = [yearPillar.stemIdx, monthPillar.stemIdx, ...(hourPillar ? [hourPillar.stemIdx] : [])];
+    const byPriority = [...hidden].reverse(); // 정기부터 검사
+    const transmitted = byPriority.find(h => visibleStemIndices.includes(h.stemIdx));
+    baseStemIdx = (transmitted ?? hidden[hidden.length - 1]).stemIdx;
+  }
+
+  const baseStem = HEAVENLY_STEMS[baseStemIdx];
+  const sipsin = resolveSipsin(dayStem.element, dayStem.yinYang, baseStem.element, baseStem.yinYang);
+  return { name: SIPSIN_TO_GYEOKGUK[sipsin], baseStemIdx, sipsin };
+}
+
 /**
  * 연주(年柱) 계산
  * 기준: 1984년 = 갑자(甲子年), 천간 0, 지지 0
@@ -285,6 +325,8 @@ export interface SajuResult {
   daeunList: DaeunEntry[];
   seunList: SeunEntry[];
   sipsin: SipsinProfile;
+  sinsal: SinsalType[];
+  gyeokguk: GyeokgukResult;
 }
 
 function makePillar(stemIdx: number, branchIdx: number): Pillar {
@@ -602,6 +644,14 @@ export function calculateSaju(
   const seunList = calculateSeun(new Date().getFullYear());
 
   const sipsin = calcSipsin(dayPillar.stemIdx, yearPillar, monthPillar, dayPillar, hourPillar);
+  const gyeokguk = calcGyeokguk(dayPillar.stemIdx, yearPillar, monthPillar, hourPillar);
+  const sinsal = getSinsal({
+    dayStemIdx: dayPillar.stemIdx,
+    yearBranchIdx: yearPillar.branchIdx,
+    monthBranchIdx: monthPillar.branchIdx,
+    dayBranchIdx: dayPillar.branchIdx,
+    hourBranchIdx: hourPillar ? hourPillar.branchIdx : null,
+  });
 
   return {
     yearPillar,
@@ -617,5 +667,7 @@ export function calculateSaju(
     daeunList,
     seunList,
     sipsin,
+    sinsal,
+    gyeokguk,
   };
 }

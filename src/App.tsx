@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import './App.css';
 import heroImage from './assets/hero.png';
-import { calculateSaju, calcDayPillar, HOUR_BRANCHES, EARTHLY_BRANCHES, hourBranchIdFromExactTime, Pillar, SajuResult } from './utils/sajuCalculator';
+import { calculateSaju, calcDayPillar, HOUR_BRANCHES, EARTHLY_BRANCHES, hourBranchIdFromExactTime, Pillar, SajuResult, SipsinType } from './utils/sajuCalculator';
 import {
   generateSajuIntro, SajuIntro,
   generateCategoryInterpretation, AiCategoryKey, CategoryInterpretation, CategoryUserAnswer,
@@ -28,6 +28,9 @@ import {
 import { MBTI_DATA } from './data/mbtiTypes';
 import { getBranchRelations } from './data/compatibility';
 import { ELEMENT_INTERPRETATIONS } from './data/elementTypes';
+import { getJijanggan } from './data/jijanggan';
+import { SINSAL_INFO } from './data/sinsal';
+import { GYEOKGUK_INFO } from './data/gyeokguk';
 import { CATEGORY_QUESTIONS, QuestionableCategory } from './data/categoryQuestions';
 // calculateAstrology/calculateTodayTransits(astronomy-engine 의존, 번들 119KB)는 정적 import하지 않고
 // 실제로 필요한 시점(폼 제출/트랜짓 갱신)에 동적 import로 불러온다 — 초기 로딩 경로에서 제외하기 위함
@@ -48,7 +51,7 @@ import { PaywallOptions } from './components/PaywallOptions';
 import { FormData, AppResult, Bookmark, Step, PillarKey, PdfSectionKey, PDF_SECTION_META, ONBOARDING_SEEN_KEY, GUIDE_LAST_SHOWN_KEY, GUIDE_DAILY_ENABLED_KEY, GUIDE_FEATURES, RESULT_HINT_SEEN_KEY } from './appTypes';
 import {
   loadCloudSync, isChunkLoadError,
-  MBTI_LIST, ELEMENT_LABELS, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
+  MBTI_LIST, ELEMENT_LABELS, SIPSIN_INFO, LOADING_MESSAGES, CATEGORY_TAB_META, isQuestionableCategory,
   escapeHtml, escapeHtmlBreaks, wrapCanvasText, loadCanvasImage,
   fengShuiCacheKey, unseCacheKey, categoryCacheKey, prescriptionsCacheKey, aiIntroCacheKey,
   elementSummaryCacheKey, compatSummaryCacheKey, categoryDeepCacheKey, fengShuiDeepCacheKey,
@@ -131,7 +134,7 @@ export default function App() {
   const [categoryAnswers, setCategoryAnswers] = useState<Partial<Record<QuestionableCategory, [string?, string?]>>>({});
 
   // 사주 4기둥 클릭 시 AI 심층 해설
-  const [pillarModal, setPillarModal] = useState<{ key: PillarKey; label: string; hanjaText: string; koreanText: string; staticDesc?: string } | null>(null);
+  const [pillarModal, setPillarModal] = useState<{ key: PillarKey; label: string; hanjaText: string; koreanText: string; branchIdx: number; staticDesc?: string } | null>(null);
   const [pillarAiData, setPillarAiData] = useState<Partial<Record<PillarKey, string>>>({});
   const [pillarAiLoading, setPillarAiLoading] = useState(false);
 
@@ -1364,7 +1367,7 @@ export default function App() {
   // 사주 4기둥 클릭 → AI 심층 해설 모달 열기
   const handlePillarClick = (key: PillarKey, label: string, pillar: Pillar, staticDesc?: string) => {
     setSelectedModal(null);
-    setPillarModal({ key, label, hanjaText: pillar.hanjaText, koreanText: pillar.text, staticDesc });
+    setPillarModal({ key, label, hanjaText: pillar.hanjaText, koreanText: pillar.text, branchIdx: pillar.branchIdx, staticDesc });
   };
 
   const handleGeneratePillarAi = async (): Promise<string | null> => {
@@ -2938,6 +2941,18 @@ export default function App() {
                 {pillarModal.staticDesc}
               </div>
             )}
+            {/* 지장간(支藏干) — 이 지지 안에 숨어있는 천간(여기/중기/정기) */}
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: 14 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>🌱 지장간(支藏干) — 이 글자 안에 숨은 기운</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {getJijanggan(pillarModal.branchIdx).map(j => (
+                  <div key={j.stage} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Noto Serif KR', serif", color: 'var(--purple-light)' }}>{j.hanja}({j.name})</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{j.stage}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
             {pillarAiData[pillarModal.key] ? (
               <>
                 <div className="deep-analysis-text" style={{ marginBottom: 16 }}>
@@ -3579,6 +3594,19 @@ export default function App() {
                 {' '}일주 <strong style={{ color: 'var(--text-primary)' }}>{result.sajuResult.dayPillar.hanjaText}({result.sajuResult.dayPillar.text})</strong>는
                 당신의 본질적인 성격과 운명의 씨앗입니다.
               </div>
+              {/* 격국(格局) — 월지 기준으로 정해지는 사주의 "기본 유형", MBTI 유형처럼 헤드라인급으로 표시 */}
+              <div style={{
+                marginTop: 10, padding: '14px 16px', borderRadius: 14,
+                background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.25)',
+                display: 'flex', alignItems: 'center', gap: 12,
+              }}>
+                <span style={{ fontSize: 26 }}>🎴</span>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>격국(格局) — 사주의 기본 유형</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--purple-light)' }}>{result.sajuResult.gyeokguk.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>{GYEOKGUK_INFO[result.sajuResult.gyeokguk.name].desc}</div>
+                </div>
+              </div>
             </div>
 
             {/* 처음 결과 화면에 도달했을 때 1회만 — "어디부터 볼지" 안내 (온보딩 진입점 과다 완화, 계획안.md 참고) */}
@@ -3950,6 +3978,64 @@ export default function App() {
                     </p>
                   ))}
                 </div>
+              )}
+            </div>
+
+            {/* 십신(十神) 분포 — 계산 자체는 예전부터 있었지만(AI 프롬프트 내부 참고용) 화면 표시는
+                이번에 처음 추가(계획안.md 참고). 오행 분포와 같은 카드 스타일로 통일. */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="section-label" style={{ marginBottom: 4 }}>🔟 십신 분포</div>
+              <div className="section-title" style={{ marginBottom: 16 }}>십신(十神)으로 보는 기질</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                {(['비견', '겁재', '식신', '상관', '편재', '정재', '편관', '정관', '편인', '정인'] as const).map(sipsin => {
+                  const cnt = result.sajuResult.sipsin.counts[sipsin] ?? 0;
+                  return (
+                    <div
+                      key={sipsin}
+                      style={{
+                        background: 'rgba(5, 5, 25, 0.9)',
+                        border: `1px solid ${cnt > 0 ? 'rgba(245, 200, 66, 0.3)' : 'rgba(100, 80, 200, 0.15)'}`,
+                        borderRadius: 14, padding: '12px 4px', textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{sipsin}</div>
+                      <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "'Noto Serif KR', serif", color: cnt > 0 ? 'var(--gold)' : 'var(--text-secondary)' }}>
+                        {cnt}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(Object.entries(result.sajuResult.sipsin.counts) as [SipsinType, number][])
+                  .filter(([, cnt]) => cnt > 0)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([sipsin]) => (
+                    <div key={sipsin} style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>{sipsin}</strong> — {SIPSIN_INFO[sipsin].desc}
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {/* 신살(神殺) 8종 — 도화/역마/화개/양인/괴강/백호/원진/귀문관. 해당하는 것만 배지로 표시. */}
+            <div className="glass-card animate-slide-up-delay-2">
+              <div className="section-label" style={{ marginBottom: 4 }}>✨ 신살</div>
+              <div className="section-title" style={{ marginBottom: 16 }}>사주에 담긴 특별한 기운</div>
+              {result.sajuResult.sinsal.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {result.sajuResult.sinsal.map(s => (
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(245, 200, 66, 0.06)', border: '1px solid rgba(245, 200, 66, 0.2)', borderRadius: 12 }}>
+                      <span style={{ fontSize: 20 }}>{SINSAL_INFO[s].emoji}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--gold)' }}>{s}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{SINSAL_INFO[s].desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>이번 사주 8글자엔 해당하는 신살이 없어요.</p>
               )}
             </div>
 

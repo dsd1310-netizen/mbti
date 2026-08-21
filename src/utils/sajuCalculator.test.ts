@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateSaju, calcDayPillar, isInHistoricalUTC830Period, isHistoricalDstDate, historicalMinuteCorrection } from './sajuCalculator';
+import { getJijanggan } from '../data/jijanggan';
 
 describe('calculateSaju — 실제 프로덕션 화면에서 확인한 기준값 회귀 테스트', () => {
   // 1995-09-27 / 오시 / 여성 — mobile-flow 실측(계획안.md 참고)에서 직접 확인한 값.
@@ -154,6 +155,46 @@ describe('calculateSaju — 1987년 서머타임 구간(그동안 미반영이�
     const r = calculateSaju(1986, 6, 1, '오시', 'female', false, 23, 5);
     const nextDay = calcDayPillar(1986, 6, 2);
     expect(r.dayPillar.text).toBe(nextDay.text);
+  });
+});
+
+describe('calculateSaju — 격국/신살/십신 분포/지장간 (계획안.md 격국·신살 추가 참고)', () => {
+  // 1995-09-27 / 오시 / 여성 — 위 기준 케이스와 동일. 일간 辛, 월지 酉(왕지) → 지장간 정기는
+  // 그대로 辛 자신이라 일간과 같은 오행/음양 → 비견 → 건록격. 모바일 실측 스크린샷으로 직접 확인.
+  const r = calculateSaju(1995, 9, 27, '오시', 'female', false);
+
+  it('월지가 왕지(酉)면 그 정기를 그대로 격의 기준으로 삼는다 — 건록격', () => {
+    expect(r.gyeokguk.name).toBe('건록격');
+    expect(r.gyeokguk.sipsin).toBe('비견');
+  });
+
+  it('신살 8종 중 도화살/역마살이 해당한다 (일지 酉가 속한 사유축 그룹 기준)', () => {
+    expect(r.sinsal).toContain('도화살');
+    expect(r.sinsal).toContain('역마살');
+    expect(r.sinsal).not.toContain('양인살');
+    expect(r.sinsal).not.toContain('괴강살');
+  });
+
+  it('십신 분포 개수 합계는 시주 포함 7자리(일간 제외)와 같다', () => {
+    const total = Object.values(r.sipsin.counts).reduce((a, b) => a + b, 0);
+    expect(total).toBe(7);
+  });
+
+  it('지장간(支藏干) — 酉(유)는 여기·정기 2단계(경·신)로 구성된다', () => {
+    const hidden = getJijanggan(9); // EARTHLY_BRANCHES 인덱스 9 = 酉
+    expect(hidden.map(h => h.name)).toEqual(['경', '신']);
+    expect(hidden.map(h => h.stage)).toEqual(['여기', '정기']);
+  });
+
+  it('지장간 — 子(자)도 여기·정기 2단계(임·계)로 구성된다', () => {
+    const hidden = getJijanggan(0);
+    expect(hidden.map(h => h.name)).toEqual(['임', '계']);
+  });
+
+  it('지장간 — 辰(진)은 여기·중기·정기 3단계(을·계·무)로 구성된다', () => {
+    const hidden = getJijanggan(4);
+    expect(hidden.map(h => h.name)).toEqual(['을', '계', '무']);
+    expect(hidden.map(h => h.stage)).toEqual(['여기', '중기', '정기']);
   });
 });
 
