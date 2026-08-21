@@ -454,8 +454,8 @@ body {
 }
 .persona-card-medallion {
   position: relative;
-  width: 88px;
-  height: 88px;
+  width: 128px;
+  height: 128px;
   border-radius: 50%;
   display: flex;
   align-items: center;
