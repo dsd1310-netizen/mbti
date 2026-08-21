@@ -1896,11 +1896,13 @@ export default function App() {
     shareTitle: string;
     sparkle?: number; // 0~4, 등급이 있는 카드(스트릭 배지 등)에서 티어가 높을수록 장식을 더 화려하게
     imageUrl?: string; // 있으면 원형 이모지 메달리온 대신 실제 카드 이미지를 세로 카드 모양으로 그림(오늘의 타로용)
+    circleImageUrl?: string; // 있으면 이모지 대신 실제 이미지를 기존 원형 메달리온 안에 클리핑해서 그림(닮은 인물용)
   }) => {
     if (!result) return;
     setPersonaImageGenerating(opts.kind);
     try {
       const cardImage = opts.imageUrl ? await loadCanvasImage(opts.imageUrl).catch(() => null) : null;
+      const circleImage = !cardImage && opts.circleImageUrl ? await loadCanvasImage(opts.circleImageUrl).catch(() => null) : null;
       const W = 1080;
       const H = 1920;
       const canvas = document.createElement('canvas');
@@ -1977,6 +1979,13 @@ export default function App() {
         ctx.lineWidth = 3;
         ctx.strokeStyle = opts.accent;
         ctx.stroke();
+      } else if (circleImage) {
+        // 닮은 인물 — 이모지 대신 실제 초상화를 원형 메달리온에 꽉 채워서 그림(라이브 앱의
+        // .persona-card-medallion-img와 같은 느낌으로 통일).
+        ctx.beginPath();
+        ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(circleImage, badgeCx - badgeR, badgeCy - badgeR, badgeR * 2, badgeR * 2);
       } else {
         ctx.font = `400 120px ${fontStack}`;
         if (opts.emojiRotated) {
@@ -5042,6 +5051,7 @@ export default function App() {
                                         accentDark: '#4c1d95',
                                         fileName: `${result.formData.name}_닮은인물_${figure.name}.png`,
                                         shareTitle: '나풀이 나와 닮은 인물',
+                                        circleImageUrl: `/gwiin/archetype/${figure.id}.webp`,
                                       })}
                                     >
                                       {personaImageGenerating === 'archetype' ? '⏳' : '🖼️ 이미지'}
