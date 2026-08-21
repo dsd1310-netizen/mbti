@@ -78,8 +78,8 @@ import { requestTossPayment, readTossReturnParams, clearTossReturnParams, Credit
 export default function App() {
   const [step, setStep] = useState<Step>(() => (localStorage.getItem(ONBOARDING_SEEN_KEY) ? 'input' : 'onboarding'));
   const [activeSection, setActiveSection] = useState<'today' | 'saju' | 'astrology'>('saju');
-  const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui'>('fortune');
-  const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions' | 'archetype'>('personality');
+  const [activeSajuTab, setActiveSajuTab] = useState<'fortune' | 'ai' | 'compat' | 'fengshui' | 'archetype'>('fortune');
+  const [activeTab, setActiveTab] = useState<'personality' | 'career' | 'romance' | 'wealth' | 'prescriptions'>('personality');
   // 어떤 탭/섹션을 실제로 많이 보는지 알기 위한 최소 화면 추적(analytics.ts 설정 안 돼 있으면 무동작)
   useEffect(() => {
     if (step !== 'result') return;
@@ -3779,6 +3779,9 @@ export default function App() {
                   { id: 'ai', label: '해석', icon: '/gwiin/tabicon/interpret.webp' },
                   { id: 'compat', label: '궁합', icon: '/gwiin/tabicon/compat.webp' },
                   { id: 'fengshui', label: '풍수', icon: '/gwiin/tabicon/fengshui.webp' },
+                  // [2026-08-22] "해석" 서브탭 안(3단계 깊이)에 있어 노출이 안 된다는 피드백으로
+                  // 독립 서브탭으로 승격. 전용 일러스트 아이콘은 아직 없어 이모지로 임시 표기.
+                  { id: 'archetype', label: '닮은 인물', icon: null, emoji: '🎭' },
                 ].map(t => (
                   <button
                     key={t.id}
@@ -3788,7 +3791,11 @@ export default function App() {
                     className={`tab-btn ${activeSajuTab === t.id ? 'active' : ''}`}
                     onClick={() => setActiveSajuTab(t.id as any)}
                   >
-                    <img src={t.icon} alt="" aria-hidden="true" style={{ width: 18, height: 18, objectFit: 'contain', verticalAlign: 'middle', marginRight: 4 }} />
+                    {t.icon ? (
+                      <img src={t.icon} alt="" aria-hidden="true" style={{ width: 18, height: 18, objectFit: 'contain', verticalAlign: 'middle', marginRight: 4 }} />
+                    ) : (
+                      <span aria-hidden="true" style={{ fontSize: 16, marginRight: 4 }}>{t.emoji}</span>
+                    )}
                     <span>{t.label}</span>
                   </button>
                 ))}
@@ -4831,7 +4838,6 @@ export default function App() {
                       { id: 'romance', label: '💖 연애/인간관계', icon: '💖' },
                       { id: 'wealth', label: '💰 재물/지출', icon: '💰' },
                       { id: 'prescriptions', label: '🎯 3대 실천 처방전', icon: '🎯' },
-                      { id: 'archetype', label: '🎭 닮은 인물', icon: '🎭' },
                     ].map(t => (
                       <button
                         key={t.id}
@@ -5018,95 +5024,6 @@ export default function App() {
                       </div>
                     )}
 
-                    {activeTab === 'archetype' && (
-                      <div className="tab-pane animate-fade-in space-y-4">
-                        {archetypeData ? (() => {
-                          const figure = ARCHETYPE_FIGURES.find(f => f.id === archetypeData.figureId);
-                          return (
-                            <>
-                              <div className="flex items-center justify-between">
-                                <div className="tab-pane-title">🎭 {result.formData.name} 님과 닮은 인물</div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  <button
-                                    className="btn-secondary"
-                                    style={{ padding: '6px 12px', fontSize: 11 }}
-                                    onClick={() => addBookmark('닮은 인물', `${result.formData.name}님과 닮은 인물`, `${figure?.name ?? ''}\n\n${archetypeData.analysis}\n\n${archetypeData.factBomb}`)}
-                                  >
-                                    🔖 저장
-                                  </button>
-                                  {figure && (
-                                    <button
-                                      className="btn-secondary"
-                                      style={{ padding: '6px 12px', fontSize: 11 }}
-                                      disabled={personaImageGenerating === 'archetype'}
-                                      onClick={() => handleDownloadPersonaCard({
-                                        kind: 'archetype',
-                                        kicker: '나와 닮은 인물',
-                                        emoji: figure.emoji,
-                                        name: figure.name,
-                                        subtitle: figure.origin,
-                                        badge: figure.traits[0],
-                                        bodyText: archetypeData.factBomb,
-                                        accent: '#8b5cf6',
-                                        accentDark: '#4c1d95',
-                                        fileName: `${result.formData.name}_닮은인물_${figure.name}.png`,
-                                        shareTitle: '나풀이 나와 닮은 인물',
-                                        circleImageUrl: `/gwiin/archetype/${figure.id}.webp`,
-                                      })}
-                                    >
-                                      {personaImageGenerating === 'archetype' ? '⏳' : '🖼️ 이미지'}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              {figure && (
-                                <div
-                                  className="persona-card"
-                                  style={{ '--accent': '#8b5cf6', '--accent-dark': '#4c1d95', '--accent-glow': 'rgba(139, 92, 246, 0.45)', '--accent-text': 'var(--purple-light)' } as React.CSSProperties}
-                                >
-                                  <div className="persona-card-medallion">
-                                    <img
-                                      src={`/gwiin/archetype/${figure.id}.webp`}
-                                      alt={figure.name}
-                                      className="persona-card-medallion-img"
-                                    />
-                                  </div>
-                                  <div className="persona-card-name">{figure.name}</div>
-                                  <div className="persona-card-divider" />
-                                  <div className="persona-card-origin">{figure.origin}</div>
-                                  <div className="persona-card-badge">{figure.traits[0]}</div>
-                                </div>
-                              )}
-                              <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
-                                {archetypeData.analysis}
-                              </p>
-                              <div className="fact-bomb-box">
-                                <div className="fact-bomb-title">🔥 한줄 정리</div>
-                                <div className="fact-bomb-content">{archetypeData.factBomb}</div>
-                              </div>
-                              <button
-                                className="btn-secondary"
-                                style={{ fontSize: 12 }}
-                                onClick={handleGenerateArchetype}
-                                disabled={archetypeLoading}
-                              >
-                                {archetypeLoading ? '다시 뽑는 중...' : '🔄 다시 뽑기'}
-                              </button>
-                            </>
-                          );
-                        })() : (
-                          <div>
-                            <div className="tab-pane-title" style={{ marginBottom: 12 }}>🎭 나와 닮은 인물</div>
-                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
-                              역사·신화·고전문학 속 인물 중, 사주와 MBTI로 봤을 때 당신과 가장 닮은 한 명을 나풀이가 찾아드려요.
-                            </p>
-                            <button className="btn-primary" onClick={handleGenerateArchetype} disabled={archetypeLoading}>
-                              {archetypeLoading ? <span>✨ 찾는 중...</span> : <span>🎭 닮은 인물 찾기</span>}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* 🗨️ AI 후속질문(채팅) — 카테고리와 무관하게 "AI 해석" 탭 전체에서 공유 */}
@@ -5243,6 +5160,98 @@ export default function App() {
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--purple-light)' }}>→</span>
               </a>
+            )}
+
+            {/* 🎭 닮은 인물 — [2026-08-22] 예전엔 "해석" 서브탭 안(3단계 깊이)에 있어 노출이 안
+                된다는 피드백으로, 나풀이의 방과 같은 이유로 독립 서브탭으로 승격. */}
+            {activeSajuTab === 'archetype' && (
+              <div className="glass-card animate-fade-in space-y-4">
+                {archetypeData ? (() => {
+                  const figure = ARCHETYPE_FIGURES.find(f => f.id === archetypeData.figureId);
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="tab-pane-title">🎭 {result.formData.name} 님과 닮은 인물</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: 11 }}
+                            onClick={() => addBookmark('닮은 인물', `${result.formData.name}님과 닮은 인물`, `${figure?.name ?? ''}\n\n${archetypeData.analysis}\n\n${archetypeData.factBomb}`)}
+                          >
+                            🔖 저장
+                          </button>
+                          {figure && (
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: 11 }}
+                              disabled={personaImageGenerating === 'archetype'}
+                              onClick={() => handleDownloadPersonaCard({
+                                kind: 'archetype',
+                                kicker: '나와 닮은 인물',
+                                emoji: figure.emoji,
+                                name: figure.name,
+                                subtitle: figure.origin,
+                                badge: figure.traits[0],
+                                bodyText: archetypeData.factBomb,
+                                accent: '#8b5cf6',
+                                accentDark: '#4c1d95',
+                                fileName: `${result.formData.name}_닮은인물_${figure.name}.png`,
+                                shareTitle: '나풀이 나와 닮은 인물',
+                                circleImageUrl: `/gwiin/archetype/${figure.id}.webp`,
+                              })}
+                            >
+                              {personaImageGenerating === 'archetype' ? '⏳' : '🖼️ 이미지'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {figure && (
+                        <div
+                          className="persona-card"
+                          style={{ '--accent': '#8b5cf6', '--accent-dark': '#4c1d95', '--accent-glow': 'rgba(139, 92, 246, 0.45)', '--accent-text': 'var(--purple-light)' } as React.CSSProperties}
+                        >
+                          <div className="persona-card-medallion">
+                            <img
+                              src={`/gwiin/archetype/${figure.id}.webp`}
+                              alt={figure.name}
+                              className="persona-card-medallion-img"
+                            />
+                          </div>
+                          <div className="persona-card-name">{figure.name}</div>
+                          <div className="persona-card-divider" />
+                          <div className="persona-card-origin">{figure.origin}</div>
+                          <div className="persona-card-badge">{figure.traits[0]}</div>
+                        </div>
+                      )}
+                      <p style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
+                        {archetypeData.analysis}
+                      </p>
+                      <div className="fact-bomb-box">
+                        <div className="fact-bomb-title">🔥 한줄 정리</div>
+                        <div className="fact-bomb-content">{archetypeData.factBomb}</div>
+                      </div>
+                      <button
+                        className="btn-secondary"
+                        style={{ fontSize: 12 }}
+                        onClick={handleGenerateArchetype}
+                        disabled={archetypeLoading}
+                      >
+                        {archetypeLoading ? '다시 뽑는 중...' : '🔄 다시 뽑기'}
+                      </button>
+                    </>
+                  );
+                })() : (
+                  <div>
+                    <div className="tab-pane-title" style={{ marginBottom: 12 }}>🎭 나와 닮은 인물</div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.7 }}>
+                      역사·신화·고전문학 속 인물 중, 사주와 MBTI로 봤을 때 당신과 가장 닮은 한 명을 나풀이가 찾아드려요.
+                    </p>
+                    <button className="btn-primary" onClick={handleGenerateArchetype} disabled={archetypeLoading}>
+                      {archetypeLoading ? <span>✨ 찾는 중...</span> : <span>🎭 닮은 인물 찾기</span>}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             </>)}
