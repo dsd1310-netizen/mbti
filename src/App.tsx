@@ -5207,7 +5207,7 @@ export default function App() {
                       </div>
                       {figure && (
                         <div
-                          className="persona-card"
+                          className="persona-card persona-card--plain"
                           style={{ '--accent': '#8b5cf6', '--accent-dark': '#4c1d95', '--accent-glow': 'rgba(139, 92, 246, 0.45)', '--accent-text': 'var(--purple-light)' } as React.CSSProperties}
                         >
                           <div className="persona-card-medallion">

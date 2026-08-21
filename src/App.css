@@ -452,10 +452,23 @@ body {
   border-radius: 14px;
   pointer-events: none;
 }
+/* [2026-08-22] 닮은 인물 카드 전용 — 초상화가 커진 뒤엔 네모난 테두리/박스 느낌이 덜해
+   보이도록 배경·테두리·그림자를 없애고 그림+텍스트만 떠 있는 느낌으로 단순화. 이 클래스를
+   공유하는 오늘의 타로 카드(.persona-card)는 이 modifier가 없어 기존 그대로 유지됨. */
+.persona-card--plain {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+.persona-card--plain::before,
+.persona-card--plain::after {
+  display: none;
+}
 .persona-card-medallion {
   position: relative;
-  width: 128px;
-  height: 128px;
+  width: 200px;
+  max-width: 60%; /* 아주 좁은 화면에서도 카드 폭을 넘지 않도록 안전장치 */
+  aspect-ratio: 1; /* max-width가 적용돼 폭이 줄어도 높이가 같이 줄어 원형을 유지 */
   border-radius: 50%;
   display: flex;
   align-items: center;
